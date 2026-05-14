@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#7c3aed">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>지도 - 탐험 퀴즈 게임</title>
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
@@ -229,7 +233,8 @@
         // iOS 13+: 버튼 탭으로만 권한 요청 가능
         document.getElementById('compass-btn').style.display = 'block';
       } else {
-        // Android / 기타: 바로 시작
+        // Android Chrome / Samsung Internet / Firefox: 바로 시작 (권한 불필요)
+        // Android에서 HTTPS가 아니면 deviceorientation이 작동하지 않을 수 있음
         attachCompassListener();
       }
     }

@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#7c3aed">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>QR 스캔 - 탐험 퀴즈 게임</title>
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
@@ -98,15 +102,28 @@
 
     function startScanner() {
       scanner = new Html5Qrcode('qr-reader');
+
+      // 후면 카메라 우선 시도 → 실패 시 전면/기본 카메라로 재시도
+      // (일부 안드로이드·삼성 인터넷에서 environment 모드가 권한 오류 반환)
       scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
         onScanSuccess,
         () => {}
-      ).catch(err => {
-        document.getElementById('qr-result').className = 'qr-result show error';
-        document.getElementById('qr-result').textContent = '카메라를 사용할 수 없어요. 권한을 허용해주세요.';
-        document.getElementById('qr-result').style.display = 'block';
+      ).catch(() => {
+        // 후면 카메라 실패 → 기본 카메라로 재시도
+        scanner.start(
+          { facingMode: 'user' },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          onScanSuccess,
+          () => {}
+        ).catch(() => {
+          // 모든 카메라 실패 → 에러 메시지
+          const r = document.getElementById('qr-result');
+          r.className = 'qr-result show error';
+          r.textContent = '카메라를 사용할 수 없어요. HTTPS 접속 및 카메라 권한을 확인해주세요.';
+          r.style.display = 'block';
+        });
       });
     }
 

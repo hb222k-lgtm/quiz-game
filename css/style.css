@@ -55,7 +55,7 @@ body {
 
 /* ── 레이아웃 ─────────────────────────────── */
 .page        { max-width: 480px; margin: 0 auto; padding: 24px 16px 40px; }
-.full-page   { width: 100%; height: 100vh; display: flex; flex-direction: column; }
+.full-page   { width: 100%; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 
 /* ── 카드 ─────────────────────────────────── */
 .card {
@@ -85,6 +85,8 @@ body {
   letter-spacing: -0.01em;
   position: relative;
   overflow: hidden;
+  touch-action: manipulation; /* Android 300ms 탭 딜레이 제거 */
+  -webkit-tap-highlight-color: transparent;
 }
 .btn::after {
   content: '';
@@ -334,6 +336,8 @@ label {
   transition: all 0.18s;
   color: var(--text);
   box-shadow: var(--shadow-sm);
+  touch-action: manipulation; /* Android 300ms 탭 딜레이 제거 */
+  -webkit-tap-highlight-color: transparent;
 }
 .option-btn:hover:not(:disabled) {
   border-color: var(--primary);
@@ -530,6 +534,7 @@ label {
 .modal-overlay {
   position: fixed; inset: 0;
   background: rgba(15,5,30,0.55);
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   z-index: 1000;
   display: none;
@@ -639,6 +644,7 @@ label {
 .shop-header h2 { font-size: 18px; font-weight: 900; letter-spacing: -0.02em; }
 .my-points {
   background: rgba(255,255,255,0.2);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   padding: 7px 16px;
   border-radius: 99px;
@@ -709,6 +715,7 @@ label {
   top: 0; left: 0; right: 0;
   z-index: 500;
   background: rgba(255,255,255,0.95);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   padding: 12px 16px;
   display: flex;
@@ -771,6 +778,7 @@ label {
   z-index: 600;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: rgba(255,255,255,0.95);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border-top: 1.5px solid var(--border);
 }
@@ -815,6 +823,7 @@ label {
   top: 50%; left: 50%;
   transform: translate(-50%, -60%);
   background: rgba(255,255,255,0.95);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border-radius: var(--radius-lg);
   padding: 18px 24px;
@@ -862,10 +871,10 @@ label {
 .spinner {
   width: 44px; height: 44px;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, var(--primary) 0%, transparent 70%);
+  /* border 방식: 모든 브라우저(Chrome/Firefox/Samsung Internet) 호환 */
+  border: 4px solid var(--border);
+  border-top-color: var(--primary);
   animation: spin 0.9s linear infinite;
-  -webkit-mask: radial-gradient(farthest-side, transparent 60%, #000 61%);
-  mask: radial-gradient(farthest-side, transparent 60%, #000 61%);
   margin: 20px auto;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
