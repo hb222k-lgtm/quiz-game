@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>퀴즈 - 탐험 퀴즈 게임</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .quiz-state {
+      display: none; padding: 40px 24px; text-align: center; flex-direction: column;
+      align-items: center; gap: 0;
+    }
+    .quiz-state-icon { font-size: 64px; margin-bottom: 16px; display: block; }
+    .quiz-state h3 { font-size: 20px; font-weight: 900; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .quiz-back-btn {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,0.2); border: none; color: #fff;
+      width: 36px; height: 36px; border-radius: 50%; font-size: 18px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body>
+  <!-- 로딩 -->
+  <div class="loading-screen" id="loading">
+    <div class="spinner"></div>
+    <p>퀴즈를 불러오는 중...</p>
+  </div>
+
+  <!-- 퀴즈 화면 -->
+  <div class="full-page" id="quiz-page" style="display:none">
+    <div class="quiz-header" style="position:relative;">
+      <button class="quiz-back-btn" onclick="window.location.href='map.html'">←</button>
+      <h2 id="location-name">장소 이름</h2>
+      <div class="pts" id="quiz-points"></div>
+    </div>
+
+    <!-- 이미 완료 -->
+    <div id="already-done" class="quiz-state" style="display:none;">
+      <span class="quiz-state-icon">✅</span>
+      <h3>이미 완료했어요!</h3>
+      <p class="text-muted" id="done-points-msg" style="margin-bottom:28px;"></p>
+      <button class="btn btn-primary" onclick="window.location.href='map.html'" style="max-width:240px;">지도로 돌아가기</button>
+    </div>
+
+    <!-- GPS 오류 -->
+    <div id="gps-error" class="quiz-state" style="display:none;">
+      <span class="quiz-state-icon">📍</span>
+      <h3>장소에 가까이 가세요</h3>
+      <p class="text-muted" id="gps-error-msg" style="margin-bottom:24px; line-height:1.7;">
+        장소로부터 <strong id="current-dist" style="color:var(--danger);"></strong>m 떨어져 있어요.<br>
+        <strong id="radius-info" style="color:var(--primary);"></strong> 이내로 다가가야 열려요.
+      </p>
+      <button class="btn btn-primary" onclick="retryGPS()" style="max-width:240px; margin-bottom:10px;">📍 다시 확인하기</button>
+      <button class="btn btn-outline" onclick="window.location.href='map.html'" style="max-width:240px;">지도로 돌아가기</button>
+    </div>
+
+    <!-- 퀴즈 로딩 -->
+    <div id="quiz-loading" style="display:none; padding:60px 16px; text-align:center;">
+      <div class="spinner"></div>
+      <p class="text-muted" style="font-weight:600;">문제를 불러오는 중...</p>
+    </div>
+
+    <!-- 퀴즈 에러 -->
+    <div id="quiz-error" class="quiz-state" style="display:none;">
+      <span class="quiz-state-icon">⚠️</span>
+      <h3>문제를 불러올 수 없어요</h3>
+      <p class="text-muted" id="quiz-error-msg" style="margin-bottom:24px;"></p>
+      <button class="btn btn-primary" onclick="retryQuiz()" style="max-width:240px; margin-bottom:10px;">다시 시도</button>
+      <button class="btn btn-outline" onclick="window.location.href='map.html'" style="max-width:240px;">지도로 돌아가기</button>
+    </div>
+
+    <!-- 퀴즈 본문 -->
+    <div id="quiz-body" style="display:none; overflow-y:auto; flex:1;">
+      <div class="question-box" id="question-text"></div>
+      <div class="options" id="options-container"></div>
+      <div class="result-box" id="result-box"></div>
+      <div style="padding: 0 16px 32px;">
+        <button class="btn btn-primary" onclick="window.location.href='map.html'" id="back-btn" style="display:none">
+          🗺️ 지도로 돌아가기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/config.js"></script>
+  <script>
+    const nickname = getNickname();
+    if (!nickname) { window.location.href = 'index.html'; }
+
+    const params  = new URLSearchParams(location.search);
+    const locId   = params.get('loc');
+    if (!locId) { window.location.href = 'map.html'; }
+
+    let locationData = null;
+    let answered = false;
+    let attempts = 0;
+    let currentQuestion = null; // 현재 표시 중인 문제 (pool/fixed 공통)
+
+    async function init() {
+      try {
+        // 장소 데이터 로드
+        const locSnap = await db.collection('locations').doc(locId).get();
+        if (!locSnap.exists || !locSnap.data().enabled) {
+          showToast('존재하지 않는 장소예요');
+          setTimeout(() => window.location.href='map.html', 1500);
+          return;
+        }
+        locationData = { id: locId, ...locSnap.data() };
+
+        // 공개 날짜 체크
+        if (locationData.startDate) {
+          const openAt = new Date(locationData.startDate);
+          if (openAt > new Date()) {
+            showToast(`${openAt.toLocaleString('ko-KR')}부터 공개되는 장소예요`);
+            setTimeout(() => window.location.href='map.html', 2000);
+            return;
+          }
+        }
+
+        // 참가자 데이터 로드
+        const pSnap = await db.collection('participants').doc(nickname).get();
+        if (!pSnap.exists) {
+          clearNickname();
+          window.location.href = 'index.html';
+          return;
+        }
+        const participant = pSnap.data();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('quiz-page').style.display = 'flex';
+        document.getElementById('location-name').textContent = locationData.name;
+        document.getElementById('quiz-points').textContent =
+          `정답 시 +${locationData.quiz?.points || 0}점`;
+
+        // 이미 완료?
+        if ((participant.completedLocations || []).includes(locId)) {
+          document.getElementById('already-done').style.display = 'block';
+          document.getElementById('done-points-msg').textContent =
+            `이 장소에서 ${locationData.quiz?.points || 0}점을 이미 획득했어요.`;
+          return;
+        }
+
+        // GPS 검증
+        verifyGPSAndShowQuiz(locationData, participant);
+      } catch (e) {
+        console.error(e);
+        showToast('오류가 발생했어요');
+        setTimeout(() => window.location.href='map.html', 1500);
+      }
+    }
+
+    let retryLoc = null, retryParticipant = null;
+
+    function retryGPS() {
+      document.getElementById('gps-error').style.display = 'none';
+      if (retryLoc && retryParticipant) verifyGPSAndShowQuiz(retryLoc, retryParticipant);
+    }
+
+    function retryQuiz() {
+      document.getElementById('quiz-error').style.display = 'none';
+      if (retryLoc && retryParticipant) loadQuiz(retryLoc, retryParticipant);
+    }
+
+    function showQuizError(msg) {
+      document.getElementById('quiz-loading').style.display = 'none';
+      document.getElementById('quiz-error').style.display = 'block';
+      document.getElementById('quiz-error-msg').textContent = msg || '잠시 후 다시 시도해주세요.';
+    }
+
+    function verifyGPSAndShowQuiz(loc, participant) {
+      retryLoc = loc;
+      retryParticipant = participant;
+
+      // 테스트 모드에서는 GPS 체크 생략
+      if (window.MOCK_MODE) { loadQuiz(loc, participant); return; }
+
+      if (!navigator.geolocation) { loadQuiz(loc, participant); return; }
+
+      // GPS 응답 대기 중 로딩 표시
+      document.getElementById('quiz-loading').style.display = 'block';
+
+      // GPS 응답이 너무 오래 걸리면 그냥 통과
+      const fallbackTimer = setTimeout(() => { loadQuiz(loc, participant); }, 10000);
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(fallbackTimer);
+          document.getElementById('quiz-loading').style.display = 'none';
+          const dist = Math.round(getDistance(
+            pos.coords.latitude, pos.coords.longitude,
+            loc.lat, loc.lng
+          ));
+          if (dist <= GAME_CONFIG.LOCATION_RADIUS) {
+            loadQuiz(loc, participant);
+          } else {
+            document.getElementById('gps-error').style.display = 'block';
+            document.getElementById('current-dist').textContent = dist;
+            document.getElementById('radius-info').textContent = `${GAME_CONFIG.LOCATION_RADIUS}m`;
+          }
+        },
+        () => {
+          clearTimeout(fallbackTimer);
+          document.getElementById('quiz-loading').style.display = 'none';
+          loadQuiz(loc, participant);
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+      );
+    }
+
+    async function loadQuiz(loc, participant) {
+      if (loc.quizMode === 'pool') {
+        document.getElementById('quiz-loading').style.display = 'block';
+        try {
+          await assignAndShowPoolQuiz(loc, participant);
+        } catch (e) {
+          console.error('퀴즈 로드 오류:', e);
+          showQuizError('문제를 불러오는 중 오류가 발생했어요.');
+        } finally {
+          document.getElementById('quiz-loading').style.display = 'none';
+        }
+      } else {
+        showQuiz(loc);
+      }
+    }
+
+    async function assignAndShowPoolQuiz(loc, participant) {
+      // 활성화된 문제 목록 가져오기
+      const bankSnap = await db.collection('quiz_bank').where('enabled', '==', true).get();
+      const allQuestions = bankSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (!allQuestions.length) {
+        showQuizError('문제 은행이 비어있어요. 관리자에게 문의하세요.');
+        return;
+      }
+
+      // 이 장소에서 각 문제가 몇 번 출제됐는지 확인 → 가장 적게 나온 문제 선택
+      const statsSnap = await db.collection('quiz_assignments').doc(loc.id).get();
+      const stats = statsSnap.exists ? statsSnap.data() : {};
+
+      const chosen = allQuestions
+        .map(q => ({ ...q, count: stats[q.id] || 0 }))
+        .sort((a, b) => a.count - b.count || Math.random() - 0.5)[0];
+
+      showPoolQuiz(loc, chosen);
+    }
+
+    function showPoolQuiz(loc, question) {
+      currentQuestion = question;
+      document.getElementById('quiz-body').style.display = 'block';
+      document.getElementById('question-text').textContent = question.question;
+
+      const container = document.getElementById('options-container');
+      container.innerHTML = '';
+      (question.options || []).forEach((opt, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn';
+        btn.textContent = `${['①','②','③','④'][i] || (i+1)+'.'} ${opt}`;
+        btn.onclick = () => answer(i, question.correctIndex, loc.quiz?.points || 0, loc.id);
+        container.appendChild(btn);
+      });
+    }
+
+    function showQuiz(loc) {
+      const quiz = loc.quiz;
+      if (!quiz || !quiz.question) {
+        showToast('퀴즈 정보가 없어요');
+        setTimeout(() => window.location.href='map.html', 1500);
+        return;
+      }
+
+      currentQuestion = quiz;
+      document.getElementById('quiz-body').style.display = 'block';
+      document.getElementById('question-text').textContent = quiz.question;
+
+      const container = document.getElementById('options-container');
+      (quiz.options || []).forEach((opt, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn';
+        btn.textContent = `${['①','②','③','④'][i] || (i+1)+'.'} ${opt}`;
+        btn.onclick = () => answer(i, quiz.correctIndex, quiz.points, loc.id);
+        container.appendChild(btn);
+      });
+    }
+
+    async function answer(selected, correct, points, locId) {
+      if (answered) return;
+
+      const btns = document.querySelectorAll('.option-btn');
+      const resultBox = document.getElementById('result-box');
+      const backBtn = document.getElementById('back-btn');
+
+      if (selected === correct) {
+        answered = true;
+        btns.forEach(b => b.disabled = true);
+        btns[selected].classList.add('correct');
+        resultBox.textContent = `🎉 정답! +${points}점 획득!`;
+        resultBox.className = 'result-box show result-correct';
+
+        const updates = {
+          points: firebase.firestore.FieldValue.increment(points),
+          completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
+        };
+        await db.collection('participants').doc(nickname).update(updates);
+        safeIncrementAssignment(locId, currentQuestion?.id);
+        backBtn.style.display = 'block';
+
+      } else {
+        attempts++;
+        btns[selected].classList.add('wrong');
+        btns[selected].disabled = true;
+
+        if (attempts < 2) {
+          // 1번 틀림 → 한 번 더 기회
+          resultBox.innerHTML = `😅 틀렸어요! 한 번 더 기회가 있어요.`;
+          resultBox.className = 'result-box show result-wrong';
+        } else {
+          // 2번 틀림 → 종료
+          answered = true;
+          btns.forEach(b => b.disabled = true);
+          btns[correct].classList.add('correct');
+          const correctText = currentQuestion?.options?.[correct] || '';
+          resultBox.innerHTML = `😢 아쉬워요! 정답: <b>${correctText}</b>`;
+          resultBox.className = 'result-box show result-wrong';
+
+          await db.collection('participants').doc(nickname).update({
+            completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
+          });
+          safeIncrementAssignment(locId, currentQuestion?.id);
+          backBtn.style.display = 'block';
+        }
+      }
+    }
+
+    // quiz_assignments 쓰기는 통계용이라 실패해도 무시 (재시도 1회)
+    function safeIncrementAssignment(locId, questionId) {
+      if (!questionId) return;
+      db.collection('quiz_assignments').doc(locId).set(
+        { [questionId]: firebase.firestore.FieldValue.increment(1) },
+        { merge: true }
+      ).catch(() => {
+        setTimeout(() => {
+          db.collection('quiz_assignments').doc(locId).set(
+            { [questionId]: firebase.firestore.FieldValue.increment(1) },
+            { merge: true }
+          ).catch(() => {});
+        }, 3000);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

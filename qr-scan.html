@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QR 스캔 - 탐험 퀴즈 게임</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { background: linear-gradient(160deg, #f3f0ff 0%, #ede9fe 40%, #fdf2ff 100%); }
+    /* html5-qrcode 기본 UI 숨기기 */
+    #qr-reader__scan_region > img { display: none; }
+    #qr-reader__dashboard_section_csr span { font-size: 13px !important; }
+    #qr-reader__dashboard_section_fsr { display: none !important; }
+    #qr-reader__header_message { display: none !important; }
+    .page-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+    }
+    .back-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: #fff; border: 1.5px solid var(--border);
+      font-size: 18px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      box-shadow: var(--shadow-sm); flex-shrink: 0;
+      color: var(--text);
+    }
+    .page-header h2 { font-size: 20px; font-weight: 900; letter-spacing: -0.02em; }
+    .tips-card { background: var(--bg2); border-color: #c4b5fd; }
+    .tips-card p { font-size: 13px; color: var(--primary); line-height: 1.8; font-weight: 600; }
+    #qr-quiz-wrap .card {
+      border-left: 4px solid var(--primary);
+    }
+    .quiz-label {
+      font-size: 12px; color: var(--primary); font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #qr-quiz-question {
+      font-size: 16px; font-weight: 700; line-height: 1.6;
+      margin-bottom: 16px; color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-header">
+      <button class="back-btn" onclick="window.location.href='map.html'">←</button>
+      <h2>📷 QR 코드 스캔</h2>
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <p class="text-muted mb-8" style="text-align:center; font-size:13px; font-weight:600;">
+        카메라에 QR 코드를 비춰주세요
+      </p>
+      <div id="qr-reader"></div>
+    </div>
+
+    <div class="qr-result" id="qr-result"></div>
+
+    <!-- 퀴즈 QR 문제 영역 -->
+    <div id="qr-quiz-wrap" style="display:none; margin-top:12px;">
+      <div class="card">
+        <div class="quiz-label">❓ 퀴즈 도전</div>
+        <p id="qr-quiz-question"></p>
+        <div id="qr-quiz-options"></div>
+      </div>
+    </div>
+
+    <div id="scan-again-wrap" style="display:none; margin-top:12px;">
+      <button class="btn btn-outline" onclick="resetScanner()">🔄 다시 스캔하기</button>
+    </div>
+
+    <div class="card mt-16 tips-card">
+      <p>
+        📌 QR 코드는 1인당 1회만 스캔 가능해요<br>
+        📌 카메라 접근 권한을 허용해야 해요<br>
+        📌 밝은 곳에서 스캔하면 더 잘 인식돼요
+      </p>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- html5-qrcode -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="js/config.js"></script>
+  <script>
+    const nickname = getNickname();
+    if (!nickname) { window.location.href = 'index.html'; }
+
+    let scanner = null;
+    let processing = false;
+
+    function startScanner() {
+      scanner = new Html5Qrcode('qr-reader');
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        onScanSuccess,
+        () => {}
+      ).catch(err => {
+        document.getElementById('qr-result').className = 'qr-result show error';
+        document.getElementById('qr-result').textContent = '카메라를 사용할 수 없어요. 권한을 허용해주세요.';
+        document.getElementById('qr-result').style.display = 'block';
+      });
+    }
+
+    let currentQRCode = null;
+    let quizAnswered = false;
+    let qrAttempts = 0;
+
+    async function onScanSuccess(decodedText) {
+      if (processing) return;
+      processing = true;
+
+      if (scanner) {
+        await scanner.stop().catch(() => {});
+        scanner = null;
+      }
+
+      let code = decodedText;
+      try {
+        const url = new URL(decodedText);
+        code = url.searchParams.get('code') || decodedText;
+      } catch {}
+
+      await handleQRCode(code);
+    }
+
+    async function handleQRCode(code) {
+      const resultEl = document.getElementById('qr-result');
+      resultEl.style.display = 'block';
+      resultEl.className = 'qr-result show';
+      resultEl.textContent = '확인 중...';
+
+      try {
+        const qrSnap = await db.collection('qrcodes').doc(code).get();
+        if (!qrSnap.exists) {
+          showResult(false, '유효하지 않은 QR 코드예요.');
+          return;
+        }
+        const qrData = { id: code, ...qrSnap.data() };
+
+        if (!qrData.enabled) {
+          showResult(false, '비활성화된 QR 코드예요.');
+          return;
+        }
+        if ((qrData.usedBy || []).includes(nickname)) {
+          showResult(false, '이미 스캔한 QR 코드예요.');
+          return;
+        }
+
+        if (qrData.type === 'quiz') {
+          resultEl.style.display = 'none';
+          currentQRCode = qrData;
+
+          // 문제 은행에서 랜덤 배정
+          const bankSnap = await db.collection('quiz_bank').where('enabled', '==', true).get();
+          const allQ = bankSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (!allQ.length) { showResult(false, '문제 은행이 비어있어요. 관리자에게 문의하세요.'); return; }
+
+          // 이 QR에서 문제별 배정 횟수 조회 → 가장 덜 나온 문제 선택
+          const statsSnap = await db.collection('qr_quiz_assignments').doc(code).get();
+          const stats = statsSnap.exists ? statsSnap.data() : {};
+          const chosen = allQ
+            .map(q => ({ ...q, count: stats[q.id] || 0 }))
+            .sort((a, b) => a.count - b.count || Math.random() - 0.5)[0];
+
+          qrData._quiz = { ...chosen, points: parseInt(qrData.quizPoints) || 100 };
+          showQRQuiz(qrData);
+        } else {
+          // 포인트 즉시 지급
+          await db.runTransaction(async tx => {
+            const pRef = db.collection('participants').doc(nickname);
+            const qRef = db.collection('qrcodes').doc(code);
+            tx.update(pRef, { points: firebase.firestore.FieldValue.increment(qrData.points) });
+            tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
+          });
+          showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${qrData.points}점 획득!`);
+        }
+      } catch (e) {
+        showResult(false, '오류가 발생했어요. 다시 시도해주세요.');
+      }
+    }
+
+    function showQRQuiz(qrData) {
+      quizAnswered = false;
+      const quiz = qrData._quiz || qrData.quiz;
+      document.getElementById('qr-quiz-question').textContent = quiz.question;
+
+      const optContainer = document.getElementById('qr-quiz-options');
+      optContainer.innerHTML = '';
+      (quiz.options || []).forEach((opt, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'option-btn';
+        btn.textContent = `${['①','②','③','④'][i] || (i+1)+'.'} ${opt}`;
+        btn.onclick = () => answerQRQuiz(i, qrData);
+        optContainer.appendChild(btn);
+      });
+
+      document.getElementById('qr-quiz-wrap').style.display = 'block';
+    }
+
+    async function answerQRQuiz(selected, qrData) {
+      if (quizAnswered) return;
+
+      const quiz = qrData._quiz || qrData.quiz;
+      const btns = document.querySelectorAll('#qr-quiz-options button');
+      const isCorrect = selected === quiz.correctIndex;
+
+      if (isCorrect) {
+        // 정답
+        quizAnswered = true;
+        btns.forEach(b => b.disabled = true);
+        btns[selected].classList.add('correct');
+
+        try {
+          const pts = parseInt(quiz.points) || 0;
+          await db.collection('participants').doc(nickname).update({
+            points: firebase.firestore.FieldValue.increment(pts)
+          });
+          await db.collection('qrcodes').doc(qrData.id).update({
+            usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
+          });
+          showResult(true, `🎉 정답! +${pts}점 획득!`);
+        } catch (e) {
+          console.error('QR quiz answer error:', e);
+          showResult(false, '오류가 발생했어요: ' + e.message);
+        }
+        document.getElementById('scan-again-wrap').style.display = 'block';
+
+      } else {
+        // 오답
+        qrAttempts++;
+        btns[selected].classList.add('wrong');
+        btns[selected].disabled = true;
+
+        if (qrAttempts < 2) {
+          // 1번 틀림 → 한 번 더 기회
+          const resultEl = document.getElementById('qr-result');
+          resultEl.style.display = 'block';
+          resultEl.className = 'qr-result show warning';
+          resultEl.textContent = '😅 틀렸어요! 한 번 더 기회가 있어요.';
+        } else {
+          // 2번 틀림 → 종료
+          quizAnswered = true;
+          btns.forEach(b => b.disabled = true);
+          btns[quiz.correctIndex].classList.add('correct');
+
+          try {
+            await db.collection('qrcodes').doc(qrData.id).update({
+              usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
+            });
+          } catch (e) {
+            console.error('QR usedBy update error:', e);
+          }
+          const correctText = quiz.options?.[quiz.correctIndex] || '';
+          showResult(false, `😢 아쉬워요! 정답: ${correctText}`);
+          document.getElementById('scan-again-wrap').style.display = 'block';
+        }
+      }
+    }
+
+    function showResult(success, message) {
+      const resultEl = document.getElementById('qr-result');
+      resultEl.style.display = 'block';
+      resultEl.className = 'qr-result show ' + (success ? 'success' : 'error');
+      resultEl.textContent = message;
+      document.getElementById('scan-again-wrap').style.display = 'block';
+    }
+
+    function resetScanner() {
+      const resultEl = document.getElementById('qr-result');
+      resultEl.className = 'qr-result';
+      resultEl.style.display = 'none';
+      document.getElementById('qr-quiz-wrap').style.display = 'none';
+      document.getElementById('scan-again-wrap').style.display = 'none';
+      currentQRCode = null;
+      quizAnswered = false;
+      qrAttempts = 0;
+      processing = false;
+      startScanner();
+    }
+
+    // URL에 ?code= 파라미터가 있으면 카메라 없이 바로 처리
+    async function tryURLCode() {
+      const code = new URLSearchParams(location.search).get('code');
+      if (!code) { startScanner(); return; }
+
+      document.getElementById('qr-reader').innerHTML =
+        '<div style="text-align:center;padding:32px;color:#64748b;">🔍 QR 코드 확인 중...</div>';
+
+      await handleQRCode(code);
+    }
+
+    // 시작
+    tryURLCode();
+  </script>
+</body>
+</html>

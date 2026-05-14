@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>관리자 - 탐험 퀴즈 게임</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    #location-picker-map { height: 240px; border-radius: 12px; border: 1.5px solid #e2e8f0; }
+  </style>
+  <style>
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .stat-box { background: var(--card); border-radius: 12px; padding: 14px; text-align: center; box-shadow: var(--shadow); }
+    .stat-box .val { font-size: 28px; font-weight: 800; color: var(--primary); }
+    .stat-box .lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .location-quiz { background: #f8fafc; border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 13px; }
+    .option-input-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .option-input-row input { flex: 1; }
+    .correct-radio { width: 18px; height: 18px; accent-color: var(--success); flex-shrink: 0; }
+    .qr-gen-box { text-align: center; padding: 16px 0; }
+    #qr-code-output canvas, #qr-code-output img { margin: 0 auto; border-radius: 8px; }
+    .admin-login { max-width: 360px; margin: 80px auto; padding: 0 16px; }
+  </style>
+</head>
+<body>
+
+<!-- 로그인 화면 -->
+<div id="login-screen">
+  <div class="admin-login">
+    <div class="hero" style="padding:32px 0 24px;">
+      <div class="hero-icon">🔐</div>
+      <h1 style="font-size:22px;">관리자 로그인</h1>
+    </div>
+    <div class="card">
+      <div class="form-group">
+        <label>비밀번호</label>
+        <input type="password" id="pw-input" placeholder="관리자 비밀번호">
+      </div>
+      <button class="btn btn-primary" onclick="adminLogin()">로그인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 관리자 메인 -->
+<div id="admin-main" style="display:none;" class="full-page">
+  <div class="admin-header">
+    <h1>🗺️ 관리자 대시보드</h1>
+    <p id="admin-subtitle">실시간 업데이트 중</p>
+  </div>
+
+  <!-- 탭 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('leaderboard', this)">🏆 리더보드</button>
+    <button class="tab-btn" onclick="switchTab('locations', this)">📍 장소</button>
+    <button class="tab-btn" onclick="switchTab('quizbank', this)">📝 문제은행</button>
+    <button class="tab-btn" onclick="switchTab('qrcodes', this)">📷 QR코드</button>
+    <button class="tab-btn" onclick="switchTab('shop', this)">🛒 상점</button>
+    <button class="tab-btn" onclick="switchTab('settings', this)">⚙️ 설정</button>
+  </div>
+
+  <div style="flex:1; overflow-y:auto;">
+
+    <!-- ── 리더보드 탭 ── -->
+    <div class="tab-panel active" id="tab-leaderboard">
+      <div class="stat-grid">
+        <div class="stat-box"><div class="val" id="stat-players">0</div><div class="lbl">참가자 수</div></div>
+        <div class="stat-box"><div class="val" id="stat-locs">0</div><div class="lbl">활성 장소</div></div>
+      </div>
+      <div id="leaderboard-list"></div>
+    </div>
+
+    <!-- ── 장소 탭 ── -->
+    <div class="tab-panel" id="tab-locations">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <button class="btn btn-primary" onclick="location.href='add-location.html'">+ 장소 추가</button>
+        <button class="btn btn-danger" style="margin-left:auto;" onclick="deleteAllLocations()">🗑 전체 삭제</button>
+      </div>
+      <div id="locations-list"></div>
+    </div>
+
+    <!-- ── 문제 은행 탭 ── -->
+    <div class="tab-panel" id="tab-quizbank">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <button class="btn btn-primary" onclick="openQuizBankModal()">+ 문제 추가</button>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; padding:12px; background:#f8fafc; border-radius:12px;">
+        <span style="font-size:13px; font-weight:600; color:#475569;">샘플 문제 추가:</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size:13px;">⛪ 성경</span>
+          <input id="church-count" type="number" min="1" max="120" value="120"
+            style="width:60px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; text-align:center;">
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:13px;" onclick="addSampleQuizData('church')">추가</button>
+        </div>
+        <div style="width:1px; height:24px; background:#e2e8f0;"></div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size:13px;">😄 넌센스</span>
+          <input id="nonsense-count" type="number" min="1" max="160" value="160"
+            style="width:60px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; text-align:center;">
+          <button class="btn btn-outline" style="padding:6px 12px; font-size:13px;" onclick="addSampleQuizData('nonsense')">추가</button>
+        </div>
+      </div>
+      <p class="text-muted mb-8" style="font-size:13px;">장소를 "문제 은행 랜덤" 모드로 설정하면 여기서 만든 문제 중 하나가 참가자별로 랜덤 배정돼요.</p>
+      <div id="quizbank-list"></div>
+    </div>
+
+    <!-- ── QR 코드 탭 ── -->
+    <div class="tab-panel" id="tab-qrcodes">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn btn-primary" onclick="openQRModal()">+ QR 코드 생성</button>
+        <button class="btn btn-outline" onclick="openBulkQRModal()">📦 일괄 생성</button>
+        <button class="btn btn-outline" onclick="printAllQR()">🖨️ 전체 인쇄</button>
+        <button class="btn btn-danger" style="margin-left:auto;" onclick="deleteAllQRCodes()">🗑 전체 삭제</button>
+      </div>
+      <div id="qrcodes-list"></div>
+    </div>
+
+    <!-- ── 상점 탭 ── -->
+    <div class="tab-panel" id="tab-shop">
+      <!-- 미확인 주문 -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+        <h3 style="font-weight:700;">📬 미확인 주문 <span id="pending-count" style="background:#ef4444;color:#fff;border-radius:20px;padding:2px 8px;font-size:12px;"></span></h3>
+      </div>
+      <div id="pending-orders-list" style="margin-bottom:16px;"></div>
+
+      <div class="divider"></div>
+      <button class="btn btn-primary mb-8" onclick="openShopItemModal()">+ 상품 추가</button>
+      <div id="shop-items-list"></div>
+    </div>
+
+    <!-- ── 설정 탭 ── -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="font-weight:700;">참가자 관리</h3>
+          <span id="participants-mgr-count" style="font-size:13px; color:#94a3b8;"></span>
+        </div>
+        <div id="participant-manager-list">
+          <p class="text-muted text-center" style="padding:16px;">참가자가 없어요</p>
+        </div>
+      </div>
+      <div class="card mt-16">
+        <h3 style="font-weight:700; margin-bottom:12px;">전체 초기화</h3>
+        <p class="text-muted mb-8" style="font-size:13px; color:#ef4444;">⚠️ 모든 참가자 포인트와 기록을 초기화해요.</p>
+        <button class="btn btn-danger" onclick="resetAll()">전체 초기화</button>
+      </div>
+
+      <div class="card mt-16" id="test-data-card">
+        <h3 style="font-weight:700; margin-bottom:8px;">🧪 테스트 데이터</h3>
+        <p class="text-muted mb-8" style="font-size:13px;">샘플 장소 3개와 QR 코드 2개를 추가해요. (테스트용)</p>
+        <button class="btn btn-outline" onclick="addTestData()">테스트 데이터 추가</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── 포인트 지급 모달 ── -->
+<div class="modal-overlay" id="give-points-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('give-points-modal')">✕</button>
+    <h3>포인트 지급</h3>
+    <p style="font-size:15px; font-weight:700; margin-bottom:4px;" id="give-points-name"></p>
+    <p style="font-size:14px; color:#64748b; margin-bottom:16px;">현재 <span id="give-points-current"></span>점</p>
+
+    <div class="form-group">
+      <label>포인트 (지급: 양수 / 차감: 음수)</label>
+      <input type="number" id="give-points-amount" placeholder="예: 100 또는 -50">
+    </div>
+
+    <p style="font-size:12px; color:#64748b; margin:-8px 0 8px;">지급</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+      <button class="btn btn-outline btn-sm" style="width:100%" onclick="setGiveAmount(50)">+50</button>
+      <button class="btn btn-outline btn-sm" style="width:100%" onclick="setGiveAmount(100)">+100</button>
+      <button class="btn btn-outline btn-sm" style="width:100%" onclick="setGiveAmount(200)">+200</button>
+    </div>
+
+    <p style="font-size:12px; color:#ef4444; margin-bottom:8px;">차감</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+      <button class="btn btn-sm" style="width:100%; background:#fef2f2; color:#ef4444; border:1.5px solid #fca5a5;"
+        onclick="setGiveAmount(-50)">-50</button>
+      <button class="btn btn-sm" style="width:100%; background:#fef2f2; color:#ef4444; border:1.5px solid #fca5a5;"
+        onclick="setGiveAmount(-100)">-100</button>
+      <button class="btn btn-sm" style="width:100%; background:#fef2f2; color:#ef4444; border:1.5px solid #fca5a5;"
+        onclick="setGiveAmount(-200)">-200</button>
+    </div>
+
+    <input type="hidden" id="give-points-nickname">
+    <button class="btn btn-primary" onclick="givePoints()">적용</button>
+  </div>
+</div>
+
+<!-- ── 상품 추가/수정 모달 ── -->
+<div class="modal-overlay" id="shop-item-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('shop-item-modal')">✕</button>
+    <h3 id="shop-item-modal-title">상품 추가</h3>
+
+    <div style="display:grid; grid-template-columns:64px 1fr; gap:8px;" class="form-group">
+      <div>
+        <label>이모지</label>
+        <input type="text" id="item-emoji" placeholder="🎁" maxlength="2" style="text-align:center; font-size:24px;">
+      </div>
+      <div>
+        <label>상품명</label>
+        <input type="text" id="item-name" placeholder="예: 아이스크림">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>설명</label>
+      <input type="text" id="item-desc" placeholder="간단한 설명 (선택)">
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
+      <div>
+        <label>가격 (포인트)</label>
+        <input type="number" id="item-price" value="100" min="1">
+      </div>
+      <div>
+        <label>수량 (-1 = 무제한)</label>
+        <input type="number" id="item-stock" value="-1">
+      </div>
+    </div>
+
+    <input type="hidden" id="item-edit-id">
+    <button class="btn btn-primary" onclick="saveShopItem()">저장하기</button>
+  </div>
+</div>
+
+<!-- ── 장소 추가/수정 모달 ── -->
+<div class="modal-overlay" id="location-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('location-modal')">✕</button>
+    <h3 id="location-modal-title">장소 추가</h3>
+
+    <div class="form-group">
+      <label>장소 이름</label>
+      <input type="text" id="loc-name" placeholder="예: 분수대 앞">
+    </div>
+    <div class="form-group">
+      <label>위치 설정 <span style="color:#64748b; font-weight:400;">(지도를 클릭해 핀을 꽂으세요)</span></label>
+      <div id="location-picker-map"></div>
+      <div id="loc-coords-display" style="font-size:13px; color:#94a3b8; margin-top:6px; text-align:center;">
+        📍 지도를 클릭해 위치를 선택하세요
+      </div>
+      <input type="hidden" id="loc-lat">
+      <input type="hidden" id="loc-lng">
+    </div>
+
+    <div class="divider"></div>
+    <h4 style="font-weight:700; margin-bottom:12px;">퀴즈 설정</h4>
+
+    <div class="form-group">
+      <label>퀴즈 방식</label>
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
+          <input type="radio" name="quiz-mode" value="fixed" checked onchange="toggleQuizMode('fixed')">
+          고정 문제 (직접 입력)
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
+          <input type="radio" name="quiz-mode" value="pool" onchange="toggleQuizMode('pool')">
+          📝 문제 은행에서 랜덤
+        </label>
+      </div>
+    </div>
+
+    <!-- 고정 문제 섹션 -->
+    <div id="fixed-quiz-section">
+      <div class="form-group">
+        <label>문제</label>
+        <textarea id="loc-question" rows="3" placeholder="퀴즈 문제를 입력하세요"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>보기 (정답 라디오 선택)</label>
+        <div id="options-inputs">
+          <div class="option-input-row">
+            <input type="radio" name="correct" value="0" class="correct-radio" checked>
+            <input type="text" placeholder="보기 1" class="opt-input">
+          </div>
+          <div class="option-input-row">
+            <input type="radio" name="correct" value="1" class="correct-radio">
+            <input type="text" placeholder="보기 2" class="opt-input">
+          </div>
+          <div class="option-input-row">
+            <input type="radio" name="correct" value="2" class="correct-radio">
+            <input type="text" placeholder="보기 3" class="opt-input">
+          </div>
+          <div class="option-input-row">
+            <input type="radio" name="correct" value="3" class="correct-radio">
+            <input type="text" placeholder="보기 4" class="opt-input">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 문제 은행 섹션 -->
+    <div id="pool-quiz-section" style="display:none;">
+      <div style="background:#f0fdf4; border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; color:#166534;">
+        📝 문제 은행 탭에서 등록한 문제들이 참가자별로 랜덤 배정돼요.<br>
+        같은 장소에서 최대한 다른 문제가 배분되도록 자동 조정돼요.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>공개 날짜/시간 <span style="color:#64748b; font-weight:400;">(이 시각부터 지도에 표시)</span></label>
+      <input type="datetime-local" id="loc-startdate">
+      <p style="font-size:12px; color:#64748b; margin-top:4px;">비워두면 바로 표시돼요</p>
+    </div>
+
+    <div class="form-group">
+      <label>정답 포인트</label>
+      <input type="number" id="loc-points" value="100" min="1">
+    </div>
+
+    <input type="hidden" id="loc-edit-id">
+    <input type="hidden" id="loc-loaded-at">
+    <button class="btn btn-primary" onclick="saveLocation()">저장하기</button>
+  </div>
+</div>
+
+<!-- ── QR 일괄 생성 모달 ── -->
+<div class="modal-overlay" id="bulk-qr-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('bulk-qr-modal')">✕</button>
+    <h3>📦 QR 코드 일괄 생성</h3>
+
+    <!-- 💰 포인트 QR -->
+    <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:14px; margin-bottom:12px;">
+      <div style="font-weight:700; font-size:14px; color:#15803d; margin-bottom:10px;">💰 포인트 QR</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">개수 <span style="color:#94a3b8;">(0이면 생성 안 함)</span></label>
+          <input type="number" id="bulk-pts-count" value="50" min="0" max="500">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">지급 포인트</label>
+          <input type="number" id="bulk-pts-points" value="50" min="1">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:8px; margin-bottom:0;">
+        <label style="font-size:12px;">라벨 접두사</label>
+        <input type="text" id="bulk-pts-label" value="포인트QR" placeholder="예: 포인트QR">
+      </div>
+    </div>
+
+    <!-- ❓ 퀴즈 QR -->
+    <div style="background:#faf5ff; border:1.5px solid #c4b5fd; border-radius:12px; padding:14px; margin-bottom:16px;">
+      <div style="font-weight:700; font-size:14px; color:#7c3aed; margin-bottom:10px;">❓ 퀴즈 QR</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">개수 <span style="color:#94a3b8;">(0이면 생성 안 함)</span></label>
+          <input type="number" id="bulk-quiz-count" value="50" min="0" max="500">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">정답 포인트</label>
+          <input type="number" id="bulk-quiz-points" value="100" min="1">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:8px; margin-bottom:0;">
+        <label style="font-size:12px;">라벨 접두사</label>
+        <input type="text" id="bulk-quiz-label" value="퀴즈QR" placeholder="예: 퀴즈QR">
+      </div>
+    </div>
+
+    <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
+      → 접두사 뒤에 #1, #2, … 번호가 붙어요
+    </div>
+
+    <button class="btn btn-primary" onclick="bulkGenerateQR()" id="bulk-gen-btn">생성 + 인쇄 페이지 열기</button>
+  </div>
+</div>
+
+<!-- ── 문제 은행 추가/수정 모달 ── -->
+<div class="modal-overlay" id="quizbank-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('quizbank-modal')">✕</button>
+    <h3 id="quizbank-modal-title">문제 추가</h3>
+
+    <div class="form-group">
+      <label>문제</label>
+      <textarea id="qb-question" rows="3" placeholder="퀴즈 문제를 입력하세요"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>보기 (정답 라디오 선택)</label>
+      <div id="qb-options-inputs">
+        <div class="option-input-row">
+          <input type="radio" name="qb-correct" value="0" class="correct-radio" checked>
+          <input type="text" placeholder="보기 1" class="qb-opt-input">
+        </div>
+        <div class="option-input-row">
+          <input type="radio" name="qb-correct" value="1" class="correct-radio">
+          <input type="text" placeholder="보기 2" class="qb-opt-input">
+        </div>
+        <div class="option-input-row">
+          <input type="radio" name="qb-correct" value="2" class="correct-radio">
+          <input type="text" placeholder="보기 3" class="qb-opt-input">
+        </div>
+        <div class="option-input-row">
+          <input type="radio" name="qb-correct" value="3" class="correct-radio">
+          <input type="text" placeholder="보기 4" class="qb-opt-input">
+        </div>
+      </div>
+    </div>
+
+    <input type="hidden" id="qb-edit-id">
+    <button class="btn btn-primary" onclick="saveQuizBankItem()">저장하기</button>
+  </div>
+</div>
+
+<!-- ── QR 코드 생성 모달 ── -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+    <h3>QR 코드 생성</h3>
+
+    <div class="form-group">
+      <label>라벨 (설명)</label>
+      <input type="text" id="qr-label" placeholder="예: 1번 부스, 점심 QR">
+    </div>
+
+    <div class="form-group">
+      <label>QR 종류</label>
+      <div style="display:flex; gap:20px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
+          <input type="radio" name="qr-type" value="points" checked onchange="toggleQRType('points')">
+          💰 포인트 즉시 지급
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
+          <input type="radio" name="qr-type" value="quiz" onchange="toggleQRType('quiz')">
+          ❓ 퀴즈 출제
+        </label>
+      </div>
+    </div>
+
+    <!-- 포인트 섹션 -->
+    <div id="qr-points-section" class="form-group">
+      <label>포인트</label>
+      <input type="number" id="qr-points" value="50" min="1">
+    </div>
+
+    <!-- 퀴즈 섹션 -->
+    <div id="qr-quiz-section" style="display:none;">
+      <div style="background:#f0fdf4; border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; color:#166534; line-height:1.6;">
+        📝 문제 은행에 등록된 문제 중 스캔한 사람마다 다른 문제가 랜덤 배정돼요.<br>
+        같은 QR을 스캔한 사람끼리 최대한 다른 문제가 나와요.
+      </div>
+      <div class="form-group">
+        <label>정답 포인트</label>
+        <input type="number" id="qr-quiz-points" value="100" min="1">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="generateQR()">QR 코드 생성</button>
+
+    <div class="qr-gen-box" id="qr-gen-result" style="display:none;">
+      <div class="divider"></div>
+      <p style="font-size:13px; color:#64748b; margin-bottom:12px;">생성된 QR 코드 (스크린샷으로 저장)</p>
+      <div id="qr-code-output"></div>
+      <p style="font-size:12px; margin-top:8px; color:#94a3b8;" id="qr-code-text"></p>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/config.js"></script>
+<script src="js/quiz-seeds.js"></script>
+<script>
+
+// ── 로그인 ────────────────────────────────────────
+function adminLogin() {
+  const pw = document.getElementById('pw-input').value;
+  if (pw === GAME_CONFIG.ADMIN_PASSWORD) {
+    sessionStorage.setItem('adminAuth', '1');
+    showAdminMain();
+  } else {
+    showToast('비밀번호가 틀렸어요');
+  }
+}
+
+function showAdminMain() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-main').style.display = 'flex';
+  initAdmin();
+}
+
+// 이미 로그인한 세션이면 바로 진입
+if (sessionStorage.getItem('adminAuth') === '1') {
+  showAdminMain();
+}
+document.getElementById('pw-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') adminLogin();
+});
+
+// ── 탭 전환 ──────────────────────────────────────
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── 관리자 초기화 ─────────────────────────────────
+function initAdmin() {
+  listenLeaderboard();
+  listenLocations();
+  listenQuizBank();
+  listenQRCodes();
+  listenShopItems();
+}
+
+// ── 리더보드 실시간 ───────────────────────────────
+let _leaderboardTimer = null;
+function listenLeaderboard() {
+  db.collection('participants')
+    .orderBy('points', 'desc')
+    .onSnapshot(snap => {
+      participantsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      document.getElementById('stat-players').textContent = participantsData.length;
+      // 10명 관리자 동시 접속 시 연속 업데이트 최적화: 500ms debounce
+      clearTimeout(_leaderboardTimer);
+      _leaderboardTimer = setTimeout(() => {
+        renderLeaderboard(participantsData);
+        renderParticipantManager(participantsData);
+      }, 500);
+    });
+}
+
+function renderLeaderboard(list) {
+  const el = document.getElementById('leaderboard-list');
+  if (list.length === 0) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">아직 참가자가 없어요</p>';
+    return;
+  }
+  el.innerHTML = list.map((p, i) => {
+    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
+    const locs = (p.completedLocations || []).length;
+    const qrs  = (p.scannedQRs || []).length;
+    return `
+      <div class="rank-row">
+        <div class="rank-num ${rankClass}">${medal}</div>
+        <div class="rank-info">
+          <div class="rank-name">${escHtml(p.nickname)}</div>
+          <div class="rank-detail">장소 ${locs}곳 완료 · QR ${qrs}개 스캔</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="rank-points">${p.points || 0}점</div>
+          <button class="btn btn-primary btn-sm" onclick="openGivePointsModal('${escHtml(p.nickname)}', ${p.points || 0})">
+            +포인트
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderParticipantManager(list) {
+  const el = document.getElementById('participant-manager-list');
+  const cnt = document.getElementById('participants-mgr-count');
+  if (!el) return;
+  cnt.textContent = `${list.length}명`;
+  if (list.length === 0) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:16px;">참가자가 없어요</p>';
+    return;
+  }
+  el.innerHTML = list.map((p, i) => `
+    <div style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+      <div style="width:28px; height:28px; border-radius:50%; background:#ede9fe; color:#7c3aed;
+                  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">
+        ${i + 1}
+      </div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(p.nickname)}</div>
+        <div style="font-size:12px; color:#64748b;">⭐ ${p.points || 0}점 · 장소 ${(p.completedLocations||[]).length}곳</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openGivePointsModal('${escHtml(p.nickname)}', ${p.points || 0})"
+        style="padding:5px 10px; font-size:12px; white-space:nowrap;">±포인트</button>
+      <button onclick="deleteParticipantById('${escHtml(p.nickname)}')"
+        style="background:none; border:none; color:#ef4444; font-size:18px; cursor:pointer; padding:4px; flex-shrink:0;">🗑</button>
+    </div>`).join('');
+}
+
+// ── 장소 실시간 ───────────────────────────────────
+let participantsData = [];
+let locationsData = [];
+function listenLocations() {
+  db.collection('locations').onSnapshot(snap => {
+    locationsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const active = locationsData.filter(l => l.enabled).length;
+    document.getElementById('stat-locs').textContent = active;
+    renderLocations();
+  });
+}
+
+function renderLocations() {
+  const el = document.getElementById('locations-list');
+  if (locationsData.length === 0) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">장소가 없어요. 추가해보세요!</p>';
+    return;
+  }
+  el.innerHTML = locationsData.map(loc => `
+    <div class="item-card">
+      <div style="display:flex; justify-content:space-between; align-items:start;">
+        <h4>${escHtml(loc.name)}</h4>
+        <span class="badge ${loc.enabled ? 'badge-green' : 'badge-gray'}">${loc.enabled ? '활성' : '비활성'}</span>
+      </div>
+      <p>📍 ${loc.lat?.toFixed?.(5) ?? loc.lat}, ${loc.lng?.toFixed?.(5) ?? loc.lng} &nbsp;·&nbsp; 📅 ${loc.startDate ? new Date(loc.startDate).toLocaleString('ko-KR') + '부터 공개' : '즉시 공개'}</p>
+      ${loc.quizMode === 'pool'
+        ? `<div class="location-quiz">📝 문제 은행 랜덤 · +${loc.quiz?.points || 0}점</div>`
+        : loc.quiz ? `
+        <div class="location-quiz">
+          <strong>Q.</strong> ${escHtml(loc.quiz.question)}<br>
+          <span style="color:#22c55e; font-weight:600;">정답: ${escHtml(loc.quiz.options?.[loc.quiz.correctIndex] || '')}</span>
+          &nbsp;·&nbsp; +${loc.quiz.points}점
+        </div>` : ''}
+      <div class="item-actions">
+        <button class="btn btn-primary btn-sm" onclick="location.href='add-location.html?edit=${loc.id}'">수정</button>
+        <button class="btn btn-sm" style="background:#f1f5f9; color:#1e293b;"
+          onclick="toggleLocation('${loc.id}', ${!loc.enabled})">
+          ${loc.enabled ? '비활성화' : '활성화'}
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="deleteLocation('${loc.id}')">삭제</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── QR 코드 실시간 ────────────────────────────────
+let qrCodesData = [];
+function listenQRCodes() {
+  db.collection('qrcodes').onSnapshot(snap => {
+    qrCodesData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderQRCodes();
+  });
+}
+
+function renderQRCodes() {
+  const el = document.getElementById('qrcodes-list');
+  if (qrCodesData.length === 0) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">QR 코드가 없어요. 생성해보세요!</p>';
+    return;
+  }
+  el.innerHTML = qrCodesData.map(qr => {
+    const isQuiz = qr.type === 'quiz';
+    const badge  = isQuiz
+      ? `<span class="badge" style="background:#ede9fe; color:#6d28d9;">❓ 퀴즈 +${qr.quizPoints || 0}점</span>`
+      : `<span class="badge badge-gold">💰 +${qr.points}점</span>`;
+    const quizPreview = isQuiz
+      ? `<div class="location-quiz" style="margin-top:6px;">📝 문제 은행 랜덤 배정 · +${qr.quizPoints || 0}점</div>`
+      : '';
+    return `
+    <div class="item-card">
+      <div style="display:flex; justify-content:space-between; align-items:start;">
+        <h4>${escHtml(qr.label || 'QR 코드')}</h4>
+        ${badge}
+      </div>
+      <p>스캔: ${(qr.usedBy || []).length}명 &nbsp;·&nbsp; ID: <code style="font-size:11px;">${qr.id}</code></p>
+      ${quizPreview}
+      ${(qr.usedBy || []).length > 0 ? `
+        <p style="font-size:12px; color:#64748b; margin-top:4px;">
+          ${(qr.usedBy || []).map(n => escHtml(n)).join(', ')}
+        </p>` : ''}
+      <div class="item-actions">
+        <button class="btn btn-primary btn-sm" onclick="showQRImage('${qr.id}')">QR 보기</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteQRCode('${qr.id}')">삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── 문제 은행 ────────────────────────────────────
+let quizBankData = [];
+
+function listenQuizBank() {
+  db.collection('quiz_bank').onSnapshot(snap => {
+    quizBankData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderQuizBank();
+  });
+}
+
+function renderQuizBank() {
+  const el = document.getElementById('quizbank-list');
+  if (!quizBankData.length) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">문제가 없어요. 추가해보세요!</p>';
+    return;
+  }
+  el.innerHTML = quizBankData.map((q, i) => `
+    <div class="item-card">
+      <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; margin-bottom:4px;">Q${i+1}. ${escHtml(q.question)}</div>
+          <div style="font-size:13px; color:#64748b;">
+            ${(q.options || []).map((o, oi) =>
+              `<span style="${oi === q.correctIndex ? 'color:#16a34a; font-weight:700;' : ''}">${['①','②','③','④'][oi]} ${escHtml(o)}</span>`
+            ).join(' &nbsp;')}
+          </div>
+        </div>
+        <span class="badge ${q.enabled !== false ? 'badge-green' : 'badge-gray'}">${q.enabled !== false ? '활성' : '비활성'}</span>
+      </div>
+      <div class="item-actions">
+        <button class="btn btn-primary btn-sm" onclick="editQuizBankItem('${q.id}')">수정</button>
+        <button class="btn btn-sm" style="background:#f1f5f9; color:#1e293b;"
+          onclick="toggleQuizBankItem('${q.id}', ${q.enabled === false})">
+          ${q.enabled !== false ? '비활성화' : '활성화'}
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="deleteQuizBankItem('${q.id}')">삭제</button>
+      </div>
+    </div>`).join('');
+}
+
+function openQuizBankModal(editId) {
+  document.getElementById('quizbank-modal-title').textContent = editId ? '문제 수정' : '문제 추가';
+  document.getElementById('qb-edit-id').value = editId || '';
+  if (!editId) {
+    document.getElementById('qb-question').value = '';
+    document.querySelectorAll('.qb-opt-input').forEach(el => { el.value = ''; });
+    document.querySelector('input[name="qb-correct"][value="0"]').checked = true;
+  }
+  document.getElementById('quizbank-modal').classList.add('visible');
+}
+
+function editQuizBankItem(id) {
+  const q = quizBankData.find(x => x.id === id);
+  if (!q) return;
+  document.getElementById('qb-question').value = q.question || '';
+  const opts = document.querySelectorAll('.qb-opt-input');
+  (q.options || []).forEach((o, i) => { if (opts[i]) opts[i].value = o; });
+  const radio = document.querySelector(`input[name="qb-correct"][value="${q.correctIndex ?? 0}"]`);
+  if (radio) radio.checked = true;
+  openQuizBankModal(id);
+}
+
+async function saveQuizBankItem() {
+  const question = document.getElementById('qb-question').value.trim();
+  const options  = [...document.querySelectorAll('.qb-opt-input')].map(el => el.value.trim()).filter(Boolean);
+  const correctIndex = parseInt(document.querySelector('input[name="qb-correct"]:checked')?.value ?? 0);
+  const editId = document.getElementById('qb-edit-id').value;
+
+  if (!question) { showToast('문제를 입력해주세요'); return; }
+  if (options.length < 2) { showToast('보기를 2개 이상 입력해주세요'); return; }
+
+  const data = { question, options, correctIndex, enabled: true };
+  try {
+    if (editId) {
+      await db.collection('quiz_bank').doc(editId).update(data);
+      showToast('문제가 수정됐어요');
+    } else {
+      await db.collection('quiz_bank').add(data);
+      showToast('문제가 추가됐어요');
+    }
+    closeModal('quizbank-modal');
+  } catch (e) {
+    showToast('저장 실패: ' + e.message);
+  }
+}
+
+async function addSampleQuizData(type) {
+  const isNonsense = type === 'nonsense';
+  const pool = isNonsense ? NONSENSE_QUIZ_DATA : CHURCH_QUIZ_DATA;
+  const label = isNonsense ? '넌센스' : '성경';
+  const inputId = isNonsense ? 'nonsense-count' : 'church-count';
+
+  const inputVal = parseInt(document.getElementById(inputId).value, 10);
+  const count = Math.min(Math.max(inputVal || 1, 1), pool.length);
+
+  // 기존 문제 목록 조회 → 중복 제거
+  showToast('중복 확인 중...');
+  const existingSnap = await db.collection('quiz_bank').get();
+  const existingQuestions = new Set(existingSnap.docs.map(d => d.data().question));
+
+  // 중복이 아닌 문제만 추출 후 랜덤으로 count개 선택
+  const available = pool.filter(q => !existingQuestions.has(q.question));
+  if (available.length === 0) {
+    showToast(`⚠️ 추가할 수 있는 새 ${label} 문제가 없어요 (모두 중복)`);
+    return;
+  }
+
+  const actualCount = Math.min(count, available.length);
+  const shuffled = [...available].sort(() => Math.random() - 0.5).slice(0, actualCount);
+
+  const skipped = count - actualCount;
+  if (!confirm(`${label} 퀴즈 ${actualCount}개를 추가할까요?${skipped > 0 ? `\n(중복 ${skipped}개 제외됨)` : ''}`)) return;
+
+  const chunkSize = 100;
+  for (let i = 0; i < shuffled.length; i += chunkSize) {
+    const batch = db.batch();
+    shuffled.slice(i, i + chunkSize).forEach(q => {
+      batch.set(db.collection('quiz_bank').doc(), { ...q, enabled: true });
+    });
+    await batch.commit();
+  }
+  showToast(`✅ ${label} 퀴즈 ${actualCount}개 추가됐어요!${skipped > 0 ? ` (중복 ${skipped}개 건너뜀)` : ''}`);
+}
+
+async function toggleQuizBankItem(id, enable) {
+  await db.collection('quiz_bank').doc(id).update({ enabled: enable });
+  showToast(enable ? '활성화됐어요' : '비활성화됐어요');
+}
+
+async function deleteQuizBankItem(id) {
+  if (!confirm('이 문제를 삭제할까요?')) return;
+  await db.collection('quiz_bank').doc(id).delete();
+  showToast('문제가 삭제됐어요');
+}
+
+// ── 지도 위치 피커 ────────────────────────────────
+let pickerMap = null;
+let pickerMarker = null;
+
+let existingLocMarkers = [];
+
+function initPickerMap(lat, lng) {
+  // 기존 장소가 많이 있으면 그 중심으로 자동 이동
+  let center, zoom;
+  if (lat && lng) {
+    center = [lat, lng];
+    zoom = 17;
+  } else if (locationsData.length > 0) {
+    const avgLat = locationsData.reduce((s, l) => s + (l.lat || 0), 0) / locationsData.length;
+    const avgLng = locationsData.reduce((s, l) => s + (l.lng || 0), 0) / locationsData.length;
+    center = [avgLat, avgLng];
+    zoom = 16;
+  } else {
+    center = GAME_CONFIG.MAP_CENTER || [37.5665, 126.9780];
+    zoom = GAME_CONFIG.MAP_ZOOM || 15;
+  }
+
+  if (!pickerMap) {
+    pickerMap = L.map('location-picker-map').setView(center, zoom);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19
+    }).addTo(pickerMap);
+    pickerMap.on('click', e => setPickerLocation(e.latlng.lat, e.latlng.lng));
+  } else {
+    pickerMap.invalidateSize();
+    pickerMap.setView(center, zoom);
+  }
+
+  // 기존 장소 마커 갱신
+  existingLocMarkers.forEach(m => pickerMap.removeLayer(m));
+  existingLocMarkers = [];
+  const editingId = document.getElementById('loc-edit-id').value;
+  locationsData.forEach(loc => {
+    if (!loc.lat || !loc.lng) return;
+    if (loc.id === editingId) return; // 편집 중인 장소는 제외 (파란 마커로 표시됨)
+    const m = L.circleMarker([loc.lat, loc.lng], {
+      radius: 8, color: '#7c3aed', weight: 2,
+      fillColor: '#a855f7', fillOpacity: 0.7
+    }).bindTooltip(loc.name, { permanent: false, direction: 'top' }).addTo(pickerMap);
+    existingLocMarkers.push(m);
+  });
+
+  if (lat && lng) {
+    setPickerLocation(lat, lng, false);
+  } else {
+    if (pickerMarker) { pickerMap.removeLayer(pickerMarker); pickerMarker = null; }
+    document.getElementById('loc-coords-display').textContent = '📍 지도를 클릭해 위치를 선택하세요';
+    document.getElementById('loc-coords-display').style.color = '#94a3b8';
+  }
+}
+
+function setPickerLocation(lat, lng, pan = true) {
+  document.getElementById('loc-lat').value = lat;
+  document.getElementById('loc-lng').value = lng;
+  document.getElementById('loc-coords-display').textContent =
+    `📍 위도 ${lat.toFixed(6)}, 경도 ${lng.toFixed(6)}`;
+  document.getElementById('loc-coords-display').style.color = '#16a34a';
+
+  if (pickerMarker) {
+    pickerMarker.setLatLng([lat, lng]);
+  } else {
+    pickerMarker = L.marker([lat, lng]).addTo(pickerMap);
+  }
+  if (pan) pickerMap.panTo([lat, lng]);
+}
+
+// ── 장소 모달 ─────────────────────────────────────
+function toggleQuizMode(mode) {
+  document.getElementById('fixed-quiz-section').style.display = mode === 'fixed' ? 'block' : 'none';
+  document.getElementById('pool-quiz-section').style.display  = mode === 'pool'  ? 'block' : 'none';
+}
+
+function openLocationModal(editId) {
+  document.getElementById('location-modal-title').textContent = editId ? '장소 수정' : '장소 추가';
+  document.getElementById('loc-edit-id').value = editId || '';
+  if (!editId) {
+    document.getElementById('loc-name').value = '';
+    document.getElementById('loc-lat').value = '';
+    document.getElementById('loc-lng').value = '';
+    document.getElementById('loc-question').value = '';
+    document.getElementById('loc-points').value = '100';
+    document.getElementById('loc-startdate').value = '';
+    document.querySelectorAll('.opt-input').forEach(el => { el.value = ''; });
+    document.querySelector('input[name="correct"][value="0"]').checked = true;
+    document.querySelector('input[name="quiz-mode"][value="fixed"]').checked = true;
+    toggleQuizMode('fixed');
+  }
+  document.getElementById('location-modal').classList.add('visible');
+  setTimeout(() => initPickerMap(), 120);
+}
+
+function editLocation(id) {
+  const loc = locationsData.find(l => l.id === id);
+  if (!loc) return;
+  document.getElementById('loc-name').value  = loc.name || '';
+  document.getElementById('loc-lat').value   = loc.lat  || '';
+  document.getElementById('loc-lng').value   = loc.lng  || '';
+  document.getElementById('loc-points').value    = loc.quiz?.points || 100;
+  document.getElementById('loc-startdate').value = loc.startDate || '';
+
+  const mode = loc.quizMode || 'fixed';
+  document.querySelector(`input[name="quiz-mode"][value="${mode}"]`).checked = true;
+  toggleQuizMode(mode);
+
+  if (mode === 'fixed') {
+    document.getElementById('loc-question').value = loc.quiz?.question || '';
+    const opts = document.querySelectorAll('.opt-input');
+    (loc.quiz?.options || []).forEach((o, i) => { if (opts[i]) opts[i].value = o; });
+    const radio = document.querySelector(`input[name="correct"][value="${loc.quiz?.correctIndex ?? 0}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  document.getElementById('loc-edit-id').value = id;
+  document.getElementById('loc-loaded-at').value = loc.updatedAt || '';
+  document.getElementById('location-modal-title').textContent = '장소 수정';
+  document.getElementById('location-modal').classList.add('visible');
+  setTimeout(() => initPickerMap(loc.lat, loc.lng), 120);
+}
+
+async function saveLocation() {
+  const name = document.getElementById('loc-name').value.trim();
+  const lat  = parseFloat(document.getElementById('loc-lat').value);
+  const lng  = parseFloat(document.getElementById('loc-lng').value);
+  const pts  = parseInt(document.getElementById('loc-points').value) || 100;
+  const editId    = document.getElementById('loc-edit-id').value;
+  const startDate = document.getElementById('loc-startdate').value || null;
+  const mode = document.querySelector('input[name="quiz-mode"]:checked')?.value || 'fixed';
+
+  if (!name) { showToast('장소 이름을 입력해주세요'); return; }
+  if (isNaN(lat) || isNaN(lng)) { showToast('지도를 클릭해 위치를 선택해주세요'); return; }
+
+  let data;
+  if (mode === 'pool') {
+    data = { name, lat, lng, enabled: true, startDate, quizMode: 'pool', quiz: { points: pts } };
+  } else {
+    const q    = document.getElementById('loc-question').value.trim();
+    const opts = [...document.querySelectorAll('.opt-input')].map(el => el.value.trim()).filter(Boolean);
+    const correctIndex = parseInt(document.querySelector('input[name="correct"]:checked')?.value ?? 0);
+    if (!q || opts.length < 2) { showToast('문제와 보기를 2개 이상 입력해주세요'); return; }
+    data = { name, lat, lng, enabled: true, startDate, quizMode: 'fixed',
+             quiz: { question: q, options: opts, correctIndex, points: pts } };
+  }
+
+  const now = new Date().toISOString();
+  data.updatedAt = now;
+
+  try {
+    if (editId) {
+      const loadedAt = document.getElementById('loc-loaded-at').value;
+      // 다른 관리자가 먼저 수정했는지 확인
+      if (loadedAt) {
+        const fresh = await db.collection('locations').doc(editId).get();
+        if (fresh.exists && fresh.data().updatedAt && fresh.data().updatedAt !== loadedAt) {
+          if (!confirm('다른 관리자가 이미 수정한 내용이 있어요.\n그래도 덮어쓸까요?')) return;
+        }
+      }
+      await db.collection('locations').doc(editId).update(data);
+      showToast('장소가 수정됐어요');
+    } else {
+      await db.collection('locations').add(data);
+      showToast('장소가 추가됐어요');
+    }
+    closeModal('location-modal');
+  } catch (e) {
+    showToast('저장 실패: ' + e.message);
+  }
+}
+
+async function toggleLocation(id, enabled) {
+  await db.collection('locations').doc(id).update({ enabled });
+  showToast(enabled ? '활성화됐어요' : '비활성화됐어요');
+}
+
+async function deleteLocation(id) {
+  if (!confirm('이 장소를 삭제할까요?')) return;
+  await db.collection('locations').doc(id).delete();
+  showToast('장소가 삭제됐어요');
+}
+
+// ── QR 일괄 생성 ─────────────────────────────────
+function openBulkQRModal() {
+  document.getElementById('bulk-pts-count').value   = '50';
+  document.getElementById('bulk-pts-points').value  = '50';
+  document.getElementById('bulk-pts-label').value   = '포인트QR';
+  document.getElementById('bulk-quiz-count').value  = '50';
+  document.getElementById('bulk-quiz-points').value = '100';
+  document.getElementById('bulk-quiz-label').value  = '퀴즈QR';
+  document.getElementById('bulk-qr-modal').classList.add('visible');
+}
+
+async function bulkGenerateQR() {
+  const ptsCount   = Math.min(parseInt(document.getElementById('bulk-pts-count').value)  || 0, 500);
+  const ptsPoints  = parseInt(document.getElementById('bulk-pts-points').value)  || 50;
+  const ptsLabel   = document.getElementById('bulk-pts-label').value.trim()  || '포인트QR';
+  const quizCount  = Math.min(parseInt(document.getElementById('bulk-quiz-count').value) || 0, 500);
+  const quizPoints = parseInt(document.getElementById('bulk-quiz-points').value) || 100;
+  const quizLabel  = document.getElementById('bulk-quiz-label').value.trim() || '퀴즈QR';
+
+  const total = ptsCount + quizCount;
+  if (total === 0) { showToast('개수를 1개 이상 입력해주세요'); return; }
+
+  const btn = document.getElementById('bulk-gen-btn');
+  btn.disabled = true;
+  btn.textContent = `생성 중... (0/${total})`;
+
+  // 생성할 항목 목록 구성
+  const items = [];
+  for (let i = 0; i < ptsCount; i++)
+    items.push({ type: 'points', label: `${ptsLabel} #${i + 1}`, points: ptsPoints });
+  for (let i = 0; i < quizCount; i++)
+    items.push({ type: 'quiz', label: `${quizLabel} #${i + 1}`, points: quizPoints });
+
+  const codes = [];
+  const chunkSize = 100;
+  for (let start = 0; start < items.length; start += chunkSize) {
+    const batch = db.batch();
+    items.slice(start, start + chunkSize).forEach(item => {
+      const code = genId();
+      const data = item.type === 'quiz'
+        ? { label: item.label, type: 'quiz',   quizPoints: item.points, enabled: true, usedBy: [] }
+        : { label: item.label, type: 'points', points:     item.points, enabled: true, usedBy: [] };
+      batch.set(db.collection('qrcodes').doc(code), data);
+      codes.push({ code, label: item.label, points: item.points, type: item.type });
+    });
+    await batch.commit();
+    btn.textContent = `생성 중... (${Math.min(start + chunkSize, total)}/${total})`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '생성 + 인쇄 페이지 열기';
+  closeModal('bulk-qr-modal');
+  const parts = [];
+  if (ptsCount  > 0) parts.push(`💰 포인트 ${ptsCount}개`);
+  if (quizCount > 0) parts.push(`❓ 퀴즈 ${quizCount}개`);
+  showToast(`✅ ${parts.join(' + ')} 생성 완료!`);
+  openPrintWindow(codes);
+}
+
+function openPrintWindow(codes) {
+  const baseUrl = GAME_CONFIG.SITE_URL + 'qr-scan.html?code=';
+  const win = window.open('', '_blank');
+  if (!win) { showToast('팝업이 차단됐어요. 브라우저에서 팝업을 허용해주세요.'); return; }
+
+  const items = codes.map(c => `
+    <div class="qi">
+      <div id="q${c.code}" class="qbox"></div>
+      <div class="ql">${c.label}</div>
+      <div class="qp">${c.type === 'quiz' ? '❓ 퀴즈 +' : '💰 +'}${c.points}점</div>
+    </div>`).join('');
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>QR 코드 인쇄</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+  <style>
+    body{font-family:sans-serif;padding:12px;background:#fff;}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+    .qi{text-align:center;border:1px solid #ddd;border-radius:8px;padding:10px;break-inside:avoid;}
+    .qbox{display:flex;justify-content:center;margin-bottom:6px;}
+    .qbox canvas,.qbox img{border-radius:4px;}
+    .ql{font-size:12px;font-weight:700;margin-bottom:2px;}
+    .qp{font-size:11px;color:#7c3aed;}
+    .no-print{margin-bottom:14px;display:flex;gap:8px;align-items:center;}
+    @media print{.no-print{display:none!important;}body{padding:4px;}}
+  </style></head><body>
+  <div class="no-print">
+    <button onclick="window.print()" style="padding:10px 24px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;">🖨️ 인쇄하기</button>
+    <span style="font-size:14px;color:#64748b;">총 ${codes.length}개</span>
+  </div>
+  <div class="grid">${items}</div>
+  <script>
+    const base='${baseUrl}';
+    ${codes.map(c => `new QRCode(document.getElementById('q${c.code}'),{text:base+'${c.code}',width:110,height:110,colorDark:'#1e293b',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.H});`).join('\n')}
+  <\/script></body></html>`);
+  win.document.close();
+}
+
+function printAllQR() {
+  if (!qrCodesData.length) { showToast('QR 코드가 없어요'); return; }
+  const codes = qrCodesData.map(q => ({
+    code: q.id, label: q.label || 'QR', points: q.quizPoints || q.points || 0, type: q.type || 'points'
+  }));
+  openPrintWindow(codes);
+}
+
+// ── QR 생성 ───────────────────────────────────────
+function toggleQRType(type) {
+  document.getElementById('qr-points-section').style.display = type === 'points' ? 'block' : 'none';
+  document.getElementById('qr-quiz-section').style.display   = type === 'quiz'   ? 'block' : 'none';
+}
+
+function openQRModal() {
+  document.getElementById('qr-label').value = '';
+  document.getElementById('qr-points').value = '50';
+  document.getElementById('qr-quiz-points').value = '100';
+  document.querySelector('input[name="qr-type"][value="points"]').checked = true;
+  toggleQRType('points');
+  document.getElementById('qr-gen-result').style.display = 'none';
+  document.getElementById('qr-code-output').innerHTML = '';
+  document.getElementById('qr-modal').classList.add('visible');
+}
+
+async function generateQR() {
+  const label = document.getElementById('qr-label').value.trim() || 'QR 코드';
+  const type  = document.querySelector('input[name="qr-type"]:checked')?.value || 'points';
+
+  let data;
+  if (type === 'quiz') {
+    const pts = parseInt(document.getElementById('qr-quiz-points').value) || 100;
+    data = { label, type: 'quiz', quizPoints: pts, enabled: true, usedBy: [] };
+  } else {
+    const points = parseInt(document.getElementById('qr-points').value) || 50;
+    data = { label, type: 'points', points, enabled: true, usedBy: [] };
+  }
+
+  const code = genId();
+  await db.collection('qrcodes').doc(code).set({
+    ...data,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  const url = GAME_CONFIG.SITE_URL + `qr-scan.html?code=${code}`;
+  document.getElementById('qr-gen-result').style.display = 'block';
+  document.getElementById('qr-code-output').innerHTML = '';
+  new QRCode(document.getElementById('qr-code-output'), {
+    text: url, width: 200, height: 200,
+    colorDark: '#1e293b', colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
+  document.getElementById('qr-code-text').textContent = `코드: ${code}`;
+  showToast('QR 코드가 생성됐어요!');
+}
+
+function showQRImage(id) {
+  const qr = qrCodesData.find(q => q.id === id);
+  if (!qr) return;
+  const url = GAME_CONFIG.SITE_URL + `qr-scan.html?code=${id}`;
+  openQRModal();
+  document.getElementById('qr-label').value = qr.label;
+  document.getElementById('qr-points').value = qr.points;
+
+  setTimeout(() => {
+    document.getElementById('qr-gen-result').style.display = 'block';
+    document.getElementById('qr-code-output').innerHTML = '';
+    new QRCode(document.getElementById('qr-code-output'), {
+      text: url, width: 200, height: 200,
+      colorDark: '#1e293b', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+    document.getElementById('qr-code-text').textContent = `코드: ${id}`;
+  }, 100);
+}
+
+async function deleteQRCode(id) {
+  if (!confirm('이 QR 코드를 삭제할까요?')) return;
+  await db.collection('qrcodes').doc(id).delete();
+  showToast('QR 코드가 삭제됐어요');
+}
+
+// ── 설정 ─────────────────────────────────────────
+async function deleteParticipantById(nick) {
+  if (!confirm(`"${nick}" 참가자를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  await db.collection('participants').doc(nick).delete();
+  showToast(`${nick} 삭제됐어요`);
+}
+
+async function resetAll() {
+  if (!confirm('모든 참가자 포인트·기록과 구매 내역을 초기화할까요?\n이 작업은 되돌릴 수 없어요.')) return;
+
+  // 참가자 포인트·기록 초기화
+  const pSnap = await db.collection('participants').get();
+  const chunkSize = 500;
+  for (let i = 0; i < pSnap.docs.length; i += chunkSize) {
+    const batch = db.batch();
+    pSnap.docs.slice(i, i + chunkSize).forEach(d => {
+      batch.update(d.ref, { points: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {} });
+    });
+    await batch.commit();
+  }
+
+  // 구매 내역(orders) 전체 삭제
+  const oSnap = await db.collection('orders').get();
+  for (let i = 0; i < oSnap.docs.length; i += chunkSize) {
+    const batch = db.batch();
+    oSnap.docs.slice(i, i + chunkSize).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  // QR 사용 기록 초기화
+  const qSnap = await db.collection('qrcodes').get();
+  for (let i = 0; i < qSnap.docs.length; i += chunkSize) {
+    const batch = db.batch();
+    qSnap.docs.slice(i, i + chunkSize).forEach(d => batch.update(d.ref, { usedBy: [] }));
+    await batch.commit();
+  }
+
+  showToast('전체 초기화 완료');
+}
+
+async function deleteAllLocations() {
+  if (locationsData.length === 0) { showToast('삭제할 장소가 없어요'); return; }
+  if (!confirm(`장소 ${locationsData.length}개를 모두 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  const chunkSize = 500;
+  for (let i = 0; i < locationsData.length; i += chunkSize) {
+    const batch = db.batch();
+    locationsData.slice(i, i + chunkSize).forEach(loc => {
+      batch.delete(db.collection('locations').doc(loc.id));
+    });
+    await batch.commit();
+  }
+  showToast('장소 전체 삭제 완료');
+}
+
+async function deleteAllQRCodes() {
+  const snap = await db.collection('qrcodes').get();
+  if (snap.empty) { showToast('삭제할 QR 코드가 없어요'); return; }
+  if (!confirm(`QR 코드 ${snap.size}개를 모두 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  const chunkSize = 500;
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += chunkSize) {
+    const batch = db.batch();
+    docs.slice(i, i + chunkSize).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  showToast('QR 코드 전체 삭제 완료');
+}
+
+// ── 상점 관리 ────────────────────────────────
+let shopItemsData = [];
+
+function listenShopItems() {
+  // 상품 목록
+  db.collection('shop_items').onSnapshot(snap => {
+    shopItemsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderShopItems();
+  });
+
+  // 미확인 주문 실시간
+  db.collection('orders').where('confirmed', '==', false).onSnapshot(snap => {
+    const orders = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.purchasedAt || '') > (b.purchasedAt || '') ? 1 : -1);
+    renderPendingOrders(orders);
+  });
+}
+
+function renderPendingOrders(orders) {
+  const el = document.getElementById('pending-orders-list');
+  const badge = document.getElementById('pending-count');
+  badge.textContent = orders.length > 0 ? orders.length : '';
+  badge.style.display = orders.length > 0 ? 'inline' : 'none';
+
+  if (!orders.length) {
+    el.innerHTML = '<p class="text-muted" style="font-size:13px; padding:8px 0;">미확인 주문이 없어요 ✅</p>';
+    return;
+  }
+
+  el.innerHTML = orders.map(o => `
+    <div class="rank-row" style="margin-bottom:8px; border:2px solid #fef08a;">
+      <div style="font-size:28px; margin-right:10px; flex-shrink:0;">${o.emoji || '🎁'}</div>
+      <div class="rank-info">
+        <div class="rank-name">${escHtml(o.nickname)}</div>
+        <div class="rank-detail">${escHtml(o.itemName)} · ${o.price}점</div>
+        <div style="font-size:11px; color:#94a3b8;">${o.purchasedAt ? new Date(o.purchasedAt).toLocaleString('ko-KR') : ''}</div>
+      </div>
+      <span style="font-size:12px; background:#fef9c3; color:#854d0e; padding:4px 10px; border-radius:10px; font-weight:600; white-space:nowrap;">전달 대기</span>
+    </div>`).join('');
+}
+
+async function confirmOrder(orderId) {
+  await db.collection('orders').doc(orderId).update({
+    confirmed: true,
+    confirmedAt: new Date().toISOString(),
+  });
+  showToast('수령 확인 완료!');
+}
+
+function renderShopItems() {
+  const el = document.getElementById('shop-items-list');
+  if (!shopItemsData.length) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">상품이 없어요. 추가해보세요!</p>';
+    return;
+  }
+  el.innerHTML = shopItemsData.map(item => `
+    <div class="item-card">
+      <div style="font-size:32px; width:44px; text-align:center; flex-shrink:0;">${item.emoji || '🎁'}</div>
+      <div class="item-info">
+        <h4>${escHtml(item.name)}</h4>
+        <p>⭐ ${item.price}점 · 재고: ${item.stock < 0 ? '무제한' : item.stock + '개'}
+          &nbsp;<span class="badge ${item.enabled ? 'badge-green' : 'badge-gray'}">${item.enabled ? '판매중' : '숨김'}</span>
+        </p>
+      </div>
+      <div class="item-actions">
+        <button class="btn btn-primary btn-sm" onclick="editShopItem('${item.id}')">수정</button>
+        <button class="btn btn-sm" style="background:#f1f5f9; color:#1e293b;"
+          onclick="toggleShopItem('${item.id}', ${!item.enabled})">${item.enabled ? '숨기기' : '보이기'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteShopItem('${item.id}')">삭제</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderPurchaseHistory(list) {
+  const el = document.getElementById('purchase-history-list');
+  if (!list.length) {
+    el.innerHTML = '<p class="text-muted" style="font-size:13px;">아직 구매 내역이 없어요</p>';
+    return;
+  }
+  el.innerHTML = list.map(p => `
+    <div class="rank-row" style="margin-bottom:8px;">
+      <div style="font-size:24px; margin-right:10px;">${p.emoji || '🎁'}</div>
+      <div class="rank-info">
+        <div class="rank-name">${escHtml(p.nickname)}</div>
+        <div class="rank-detail">${escHtml(p.itemName)}</div>
+      </div>
+      <div style="font-weight:700; color:#7c3aed;">-${p.price}점</div>
+    </div>`).join('');
+}
+
+function openShopItemModal(editId) {
+  document.getElementById('shop-item-modal-title').textContent = editId ? '상품 수정' : '상품 추가';
+  document.getElementById('item-edit-id').value = editId || '';
+  if (!editId) {
+    document.getElementById('item-emoji').value = '';
+    document.getElementById('item-name').value  = '';
+    document.getElementById('item-desc').value  = '';
+    document.getElementById('item-price').value = '100';
+    document.getElementById('item-stock').value = '-1';
+  }
+  document.getElementById('shop-item-modal').classList.add('visible');
+}
+
+function editShopItem(id) {
+  const item = shopItemsData.find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('item-emoji').value = item.emoji || '';
+  document.getElementById('item-name').value  = item.name || '';
+  document.getElementById('item-desc').value  = item.description || '';
+  document.getElementById('item-price').value = item.price || 100;
+  document.getElementById('item-stock').value = item.stock ?? -1;
+  openShopItemModal(id);
+}
+
+async function saveShopItem() {
+  const emoji = document.getElementById('item-emoji').value.trim() || '🎁';
+  const name  = document.getElementById('item-name').value.trim();
+  const desc  = document.getElementById('item-desc').value.trim();
+  const price = parseInt(document.getElementById('item-price').value) || 100;
+  const stock = parseInt(document.getElementById('item-stock').value) ?? -1;
+  const editId = document.getElementById('item-edit-id').value;
+
+  if (!name) { showToast('상품명을 입력해주세요'); return; }
+
+  const data = { emoji, name, description: desc, price, stock, enabled: true };
+  if (editId) {
+    await db.collection('shop_items').doc(editId).update(data);
+    showToast('상품이 수정됐어요');
+  } else {
+    await db.collection('shop_items').add(data);
+    showToast('상품이 추가됐어요');
+  }
+  closeModal('shop-item-modal');
+}
+
+async function toggleShopItem(id, enabled) {
+  await db.collection('shop_items').doc(id).update({ enabled });
+  showToast(enabled ? '상품이 보이게 됐어요' : '상품이 숨겨졌어요');
+}
+
+async function deleteShopItem(id) {
+  if (!confirm('이 상품을 삭제할까요?')) return;
+  await db.collection('shop_items').doc(id).delete();
+  showToast('상품이 삭제됐어요');
+}
+
+// ── 포인트 지급 모달 ──────────────────────────
+function openGivePointsModal(nickname, currentPoints) {
+  document.getElementById('give-points-name').textContent = nickname;
+  document.getElementById('give-points-current').textContent = currentPoints;
+  document.getElementById('give-points-nickname').value = nickname;
+  document.getElementById('give-points-amount').value = '';
+  document.getElementById('give-points-modal').classList.add('visible');
+}
+
+function setGiveAmount(n) {
+  document.getElementById('give-points-amount').value = n;
+}
+
+async function givePoints() {
+  const nickname = document.getElementById('give-points-nickname').value;
+  const amount   = parseInt(document.getElementById('give-points-amount').value);
+  if (!amount || amount === 0) { showToast('포인트를 입력해주세요'); return; }
+
+  // 차감 시 0점 아래로 내려가지 않게 확인
+  if (amount < 0) {
+    const snap = await db.collection('participants').doc(nickname).get();
+    const current = snap.data()?.points || 0;
+    if (current + amount < 0) {
+      showToast(`포인트가 부족해요 (현재 ${current}점)`);
+      return;
+    }
+  }
+
+  await db.collection('participants').doc(nickname).update({
+    points: firebase.firestore.FieldValue.increment(amount)
+  });
+
+  const msg = amount > 0
+    ? `${nickname}에게 +${amount}점 지급 완료!`
+    : `${nickname}에게 ${amount}점 차감 완료!`;
+  showToast(msg);
+  closeModal('give-points-modal');
+}
+
+// ── 테스트 데이터 추가 ────────────────────────────
+async function addTestData() {
+  if (!confirm('샘플 장소 3개와 QR 코드 2개를 추가할까요?')) return;
+  if (window.seedTestData) {
+    await window.seedTestData();
+  } else {
+    // Firebase 모드에서는 직접 추가
+    const locs = [
+      { name: '분수대 앞', lat: 37.5665, lng: 126.9780, enabled: true,
+        quiz: { question: '대한민국의 수도는?', options: ['부산','서울','인천','대전'], correctIndex: 1, points: 100 } },
+      { name: '카페 테라스', lat: 37.5670, lng: 126.9790, enabled: true,
+        quiz: { question: '한국의 국화(나라꽃)는?', options: ['장미','벚꽃','무궁화','진달래'], correctIndex: 2, points: 120 } },
+      { name: '광장 입구', lat: 37.5658, lng: 126.9770, enabled: true,
+        quiz: { question: '서울의 별명은?', options: ['한강의 기적','빛의 도시','동방의 빛','천년의 수도'], correctIndex: 0, points: 150 } },
+    ];
+    for (const loc of locs) await db.collection('locations').add(loc);
+    await db.collection('qrcodes').doc('sample-qr-001').set({ label: '샘플 QR 1번', points: 50, enabled: true, usedBy: [] });
+    await db.collection('qrcodes').doc('sample-qr-002').set({ label: '샘플 QR 2번', points: 80, enabled: true, usedBy: [] });
+    showToast('테스트 데이터가 추가됐어요!');
+  }
+}
+
+// ── 유틸 ─────────────────────────────────────────
+function closeModal(id) {
+  document.getElementById(id).classList.remove('visible');
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// 모달 외부 클릭으로 닫기
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('visible');
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>지도 - 탐험 퀴즈 게임</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    #map { width: 100%; height: 100%; }
+    .leaflet-popup-content-wrapper { border-radius: 14px; }
+    .leaflet-popup-content { margin: 12px 16px; font-family: inherit; }
+    .popup-quiz-btn {
+      display: block; width: 100%; padding: 10px;
+      background: #3b82f6; color: #fff; border: none;
+      border-radius: 10px; font-size: 14px; font-weight: 600;
+      cursor: pointer; text-align: center;
+    }
+    .popup-quiz-btn:disabled { background: #94a3b8; }
+
+    /* 방향 화살표 마커 */
+    .user-marker {
+      width: 48px; height: 48px;
+      position: relative;
+      transition: transform 0.3s ease;
+    }
+    .user-arrow {
+      position: absolute;
+      left: 50%; top: 2px;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-bottom: 16px solid #3b82f6;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+    }
+    .user-dot {
+      position: absolute;
+      width: 20px; height: 20px;
+      background: #3b82f6;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .user-accuracy {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: rgba(59,130,246,0.12);
+      border: 1.5px solid rgba(59,130,246,0.3);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="full-page">
+    <!-- 헤더 -->
+    <div class="map-header">
+      <div>
+        <div class="nickname" id="header-name">로딩 중...</div>
+        <div style="font-size:12px; color:#64748b" id="header-progress"></div>
+      </div>
+      <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
+    </div>
+
+    <!-- 지도 -->
+    <div id="map-container" style="flex:1; position:relative;">
+      <div id="map"></div>
+      <div class="gps-status" id="gps-status">
+        <div class="gps-dot" id="gps-dot"></div>
+        <span id="gps-text">GPS 연결 중</span>
+      </div>
+      <!-- iOS용 나침반 권한 버튼 -->
+      <div id="compass-btn" onclick="requestCompassPermission()" style="
+        display:none; position:absolute; bottom:16px; left:50%;
+        transform:translateX(-50%); z-index:500;
+        background:#fff; border-radius:20px; padding:8px 16px;
+        box-shadow:0 2px 12px rgba(0,0,0,0.2);
+        font-size:13px; font-weight:600; cursor:pointer;
+        white-space:nowrap;">
+        🧭 나침반 켜기 (탭)
+      </div>
+    </div>
+
+    <!-- 장소 팝업 (하단) -->
+    <div class="location-popup" id="location-popup">
+      <h3 id="popup-name"></h3>
+      <p id="popup-desc"></p>
+      <button class="btn btn-primary" id="popup-btn" onclick="goToQuiz()">퀴즈 풀기 →</button>
+    </div>
+
+    <!-- 하단 버튼 -->
+    <div class="map-footer">
+      <button class="btn btn-primary" id="follow-btn" onclick="toggleFollow()">
+        📍 따라가기
+      </button>
+      <button class="btn btn-outline" onclick="window.location.href='qr-scan.html'">
+        📷 QR
+      </button>
+      <button class="btn btn-primary" onclick="window.location.href='shop.html'"
+        style="background:var(--grad-cyan);">
+        🛒 상점
+      </button>
+      <button class="btn btn-outline" onclick="window.location.href='index.html'">
+        🚪 나가기
+      </button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/config.js"></script>
+  <script>
+    const nickname = getNickname();
+    if (!nickname) { window.location.href = 'index.html'; }
+
+    let map, userMarker, userCircle;
+    let locations = [];
+    let locationMarkers = {};
+    let participant = { points: 0, completedLocations: [], scannedQRs: [] };
+    let currentLocation = null;
+    let activePopupLocationId = null;
+    let followMode = true; // 내 위치 따라가기 켜짐
+
+    // ── 마커 아이콘 ──────────────────────────────
+    function makeIcon(emoji, size = 36) {
+      return L.divIcon({
+        html: `<div style="
+          font-size:${size}px; line-height:1;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          ">${emoji}</div>`,
+        className: '',
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+        popupAnchor: [0, -size/2],
+      });
+    }
+
+    // ── 지도 초기화 ───────────────────────────────
+    function initMap() {
+      map = L.map('map', { zoomControl: false }).setView(GAME_CONFIG.MAP_CENTER, GAME_CONFIG.MAP_ZOOM);
+      // 네이버 지도와 유사한 깔끔한 스타일 타일
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap © CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
+      }).addTo(map);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+    }
+
+    // ── 방향 마커 아이콘 생성 ──────────────────────
+    let compassHeading = 0;
+
+    function makeUserIcon(heading) {
+      return L.divIcon({
+        html: `<div class="user-marker" id="user-marker-el" style="transform:rotate(${heading}deg)">
+                 <div class="user-arrow"></div>
+                 <div class="user-dot"></div>
+               </div>`,
+        className: '',
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+      });
+    }
+
+    // ── 내 위치 마커 ──────────────────────────────
+    function updateUserMarker(lat, lng, accuracy) {
+      if (!userMarker) {
+        userMarker = L.marker([lat, lng], {
+          icon: makeUserIcon(compassHeading), zIndexOffset: 1000
+        }).addTo(map);
+        userCircle = L.circle([lat, lng], {
+          radius: accuracy,
+          color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.08, weight: 1
+        }).addTo(map);
+        map.setView([lat, lng], map.getZoom());
+      } else {
+        userMarker.setLatLng([lat, lng]);
+        userCircle.setLatLng([lat, lng]);
+        userCircle.setRadius(accuracy);
+      }
+      if (followMode) {
+        map.panTo([lat, lng], { animate: true, duration: 0.5 });
+      }
+    }
+
+    // ── 나침반 방향 업데이트 ──────────────────────
+    function updateCompass(heading) {
+      compassHeading = heading;
+      const el = document.getElementById('user-marker-el');
+      if (el) el.style.transform = `rotate(${heading}deg)`;
+    }
+
+    // ── 나침반 이벤트 연결 ────────────────────────
+    function attachCompassListener() {
+      const handler = (e) => {
+        let heading = null;
+        if (typeof e.webkitCompassHeading === 'number') {
+          heading = e.webkitCompassHeading;          // iOS (절대 북쪽 기준)
+        } else if (typeof e.alpha === 'number') {
+          heading = (360 - e.alpha) % 360;           // Android
+        }
+        if (heading !== null) updateCompass(Math.round(heading));
+      };
+      // Android는 deviceorientationabsolute가 더 정확
+      window.addEventListener('deviceorientationabsolute', handler, true);
+      window.addEventListener('deviceorientation', handler, true);
+    }
+
+    function startCompass() {
+      if (typeof DeviceOrientationEvent === 'undefined') return;
+
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+: 버튼 탭으로만 권한 요청 가능
+        document.getElementById('compass-btn').style.display = 'block';
+      } else {
+        // Android / 기타: 바로 시작
+        attachCompassListener();
+      }
+    }
+
+    async function requestCompassPermission() {
+      try {
+        const perm = await DeviceOrientationEvent.requestPermission();
+        if (perm === 'granted') {
+          attachCompassListener();
+          document.getElementById('compass-btn').style.display = 'none';
+          showToast('나침반이 켜졌어요 🧭');
+        } else {
+          showToast('나침반 권한이 거부됐어요');
+        }
+      } catch (e) {
+        showToast('나침반을 사용할 수 없어요');
+      }
+    }
+
+    // ── 따라가기 버튼 토글 ────────────────────────
+    function toggleFollow() {
+      followMode = !followMode;
+      const btn = document.getElementById('follow-btn');
+      if (followMode) {
+        btn.textContent = '📍 따라가기 켜짐';
+        btn.className = 'btn btn-primary';
+        if (currentLocation) map.panTo([currentLocation.lat, currentLocation.lng]);
+      } else {
+        btn.textContent = '📍 따라가기 꺼짐';
+        btn.className = 'btn btn-outline';
+      }
+    }
+
+    // ── GPS 상태 표시 ─────────────────────────────
+    function setGPSStatus(state, text) {
+      const dot = document.getElementById('gps-dot');
+      const label = document.getElementById('gps-text');
+      dot.className = 'gps-dot ' + state;
+      label.textContent = text;
+    }
+
+    // ── 장소 마커 렌더링 ──────────────────────────
+    function renderLocationMarker(loc) {
+      // 이미 완료한 장소는 지도에서 제거
+      if (locationMarkers[loc.id]) {
+        map.removeLayer(locationMarkers[loc.id]);
+        delete locationMarkers[loc.id];
+      }
+
+      const isDone = (participant.completedLocations || []).includes(loc.id);
+      if (isDone) return; // 완료된 장소는 마커 추가 안 함
+
+      const marker = L.marker([loc.lat, loc.lng], { icon: makeIcon('📍') });
+      marker.on('click', () => showLocationPopup(loc));
+      marker.addTo(map);
+      locationMarkers[loc.id] = marker;
+    }
+
+    // ── 팝업 표시 ─────────────────────────────────
+    function showLocationPopup(loc) {
+      if (!loc.enabled) return;
+      const isDone = participant.completedLocations.includes(loc.id);
+      const dist = currentLocation
+        ? Math.round(getDistance(currentLocation.lat, currentLocation.lng, loc.lat, loc.lng))
+        : null;
+      const inRange = dist !== null && dist <= GAME_CONFIG.LOCATION_RADIUS;
+
+      activePopupLocationId = loc.id;
+      document.getElementById('popup-name').textContent = `📍 ${loc.name}`;
+
+      const btn = document.getElementById('popup-btn');
+
+      btn.style.background = '';
+      btn.style.color = '';
+      if (isDone) {
+        document.getElementById('popup-desc').textContent = '✅ 이미 완료한 장소예요! (+' + (loc.quiz?.points || 0) + '점)';
+        btn.textContent = '완료됨';
+        btn.disabled = true;
+        btn.className = 'btn btn-success popup-quiz-btn';
+      } else if (!currentLocation) {
+        document.getElementById('popup-desc').textContent = 'GPS 위치를 확인 중이에요...';
+        btn.textContent = 'GPS 대기 중';
+        btn.disabled = true;
+        btn.className = 'btn popup-quiz-btn';
+      } else if (inRange) {
+        document.getElementById('popup-desc').textContent = `🟢 ${dist}m 이내 — 퀴즈를 풀 수 있어요! (${loc.quiz?.points || 0}점)`;
+        btn.textContent = '퀴즈 풀기 →';
+        btn.disabled = false;
+        btn.className = 'btn btn-primary popup-quiz-btn';
+      } else {
+        document.getElementById('popup-desc').textContent = `🔒 ${dist}m 떨어져 있어요. ${GAME_CONFIG.LOCATION_RADIUS}m 이내로 다가가세요.`;
+        btn.textContent = `아직 멀어요 (${dist}m)`;
+        btn.disabled = true;
+        btn.className = 'btn popup-quiz-btn';
+      }
+
+      document.getElementById('location-popup').classList.add('visible');
+    }
+
+    function goToQuiz() {
+      if (activePopupLocationId) {
+        window.location.href = `quiz.html?loc=${activePopupLocationId}`;
+      }
+    }
+
+    // 지도 빈 곳 클릭 시 팝업 닫기
+    function closePopupOnMapClick() {
+      document.getElementById('location-popup').classList.remove('visible');
+      activePopupLocationId = null;
+    }
+
+    // ── GPS 감시 ──────────────────────────────────
+    function startGPS() {
+      if (!navigator.geolocation) {
+        setGPSStatus('bad', 'GPS 미지원');
+        return;
+      }
+
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+          currentLocation = { lat, lng };
+
+          updateUserMarker(lat, lng, accuracy);
+
+          const acc = Math.round(accuracy);
+          if (accuracy < 20)      setGPSStatus('good', `GPS ${acc}m`);
+          else if (accuracy < 60) setGPSStatus('ok',   `GPS ${acc}m`);
+          else                    setGPSStatus('bad',  `GPS ${acc}m`);
+
+          // 범위 안에 들어온 장소가 있으면 자동 팝업
+          locations.forEach(loc => {
+            if (!loc.enabled) return;
+            const dist = getDistance(lat, lng, loc.lat, loc.lng);
+            if (dist <= GAME_CONFIG.LOCATION_RADIUS && !participant.completedLocations.includes(loc.id)) {
+              if (activePopupLocationId !== loc.id) {
+                showLocationPopup(loc);
+              }
+            }
+          });
+
+          // 열려있는 팝업 거리 업데이트
+          if (activePopupLocationId) {
+            const loc = locations.find(l => l.id === activePopupLocationId);
+            if (loc) showLocationPopup(loc);
+          }
+        },
+        (err) => {
+          setGPSStatus('bad', 'GPS 오류');
+          console.warn('GPS error:', err);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+      );
+    }
+
+    // ── 참가자 데이터 실시간 수신 ─────────────────
+    function listenParticipant() {
+      db.collection('participants').doc(nickname).onSnapshot(snap => {
+        if (!snap.exists) return;
+        participant = snap.data();
+        document.getElementById('header-points').textContent = participant.points || 0;
+        document.getElementById('header-name').textContent = nickname;
+        document.getElementById('header-progress').textContent =
+          `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
+        // 마커 갱신
+        locations.forEach(loc => renderLocationMarker(loc));
+      });
+    }
+
+    // ── 날짜 공개 여부 확인 ──────────────────────
+    function isLocationActive(loc) {
+      if (!loc.startDate) return true;
+      return new Date(loc.startDate) <= new Date();
+    }
+
+    // ── 장소 목록 로드 ────────────────────────────
+    async function loadLocations() {
+      const snap = await db.collection('locations').where('enabled', '==', true).get();
+      locations = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isLocationActive);
+      locations.forEach(loc => renderLocationMarker(loc));
+      document.getElementById('header-progress').textContent =
+        `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
+
+      // 장소 변경 실시간 감지
+      db.collection('locations').onSnapshot(snap => {
+        locations = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(l => l.enabled && isLocationActive(l));
+        locations.forEach(loc => renderLocationMarker(loc));
+      });
+    }
+
+    // ── 참가자 포인트 강제 새로고침 ──────────────
+    async function refreshParticipant() {
+      const snap = await db.collection('participants').doc(nickname).get();
+      if (!snap.exists) return;
+      participant = snap.data();
+      document.getElementById('header-points').textContent = participant.points || 0;
+      document.getElementById('header-name').textContent = nickname;
+      document.getElementById('header-progress').textContent =
+        `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
+      locations.forEach(loc => renderLocationMarker(loc));
+    }
+
+    // ── 초기화 ────────────────────────────────────
+    document.getElementById('header-name').textContent = nickname;
+    initMap();
+    map.on('click', closePopupOnMapClick);
+    map.on('dragstart', () => {
+      if (followMode) {
+        followMode = false;
+        const btn = document.getElementById('follow-btn');
+        btn.textContent = '📍 따라가기 꺼짐';
+        btn.className = 'btn btn-outline';
+      }
+    });
+    startGPS();
+    startCompass();
+    loadLocations();
+    listenParticipant();
+
+    // 뒤로가기로 돌아왔을 때 포인트 즉시 갱신 (bfcache 대응)
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted) refreshParticipant();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshParticipant();
+    });
+  </script>
+</body>
+</html>

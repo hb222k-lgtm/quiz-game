@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>장소 추가 - 관리자</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* 상단 바 */
+    .top-bar {
+      flex-shrink: 0;
+      background: #7c3aed; color: #fff;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 16px; height: 52px; z-index: 100;
+    }
+    .top-bar button { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0; }
+    .top-bar h2 { font-size: 17px; font-weight: 700; }
+    .top-bar .edit-badge { margin-left: auto; background: rgba(255,255,255,0.25); border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+
+    /* 지도 */
+    #map { flex: 1; min-height: 0; }
+
+    /* 위치 힌트 (지도 위 오버레이) */
+    #map-hint {
+      position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.65); color: #fff;
+      padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+      pointer-events: none; z-index: 500; white-space: nowrap;
+      transition: opacity 0.3s;
+    }
+    #map-hint.hidden { opacity: 0; }
+
+    /* 하단 폼 패널 */
+    .panel {
+      flex-shrink: 0;
+      background: #fff;
+      border-top: 1px solid #e2e8f0;
+      display: flex; flex-direction: column;
+      max-height: 55vh;
+    }
+
+    /* 패널 헤더 (탭 토글) */
+    .panel-header {
+      display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
+    }
+    .panel-tab {
+      flex: 1; padding: 10px 0; font-size: 13px; font-weight: 600;
+      color: #94a3b8; background: none; border: none; cursor: pointer;
+      border-bottom: 3px solid transparent;
+    }
+    .panel-tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+
+    /* 폼 스크롤 영역 */
+    .panel-body { overflow-y: auto; padding: 14px 16px; flex: 1; }
+
+    /* 위치 배지 */
+    .loc-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .loc-badge.set   { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; }
+    .loc-badge.unset { background: #fef9c3; border: 1.5px solid #fde047; color: #854d0e; }
+
+    /* 폼 그룹 */
+    .fg { margin-bottom: 12px; }
+    .fg label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+    .fg input, .fg textarea, .fg select {
+      width: 100%; padding: 9px 11px; border: 1.5px solid #e2e8f0;
+      border-radius: 10px; font-size: 14px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .fg input:focus, .fg textarea:focus { border-color: #7c3aed; }
+
+    /* 라디오 토글 */
+    .radio-group { display: flex; gap: 8px; }
+    .radio-group label {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+      padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer; color: #64748b;
+      transition: all 0.15s;
+    }
+    .radio-group input[type=radio] { display: none; }
+    .radio-group input[type=radio]:checked + span { color: #7c3aed; }
+    .radio-group label:has(input:checked) { border-color: #7c3aed; background: #faf5ff; color: #7c3aed; }
+
+    /* 보기 입력 */
+    .opt-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .opt-row input[type=radio] { width: 18px; height: 18px; accent-color: #7c3aed; flex-shrink: 0; }
+    .opt-row input[type=text] { flex: 1; padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
+
+    /* 기존 장소 목록 */
+    .loc-list-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid #f1f5f9; cursor: pointer;
+    }
+    .loc-list-item:last-child { border-bottom: none; }
+    .loc-dot { width: 10px; height: 10px; border-radius: 50%; background: #a855f7; flex-shrink: 0; }
+    .loc-list-item .name { font-weight: 600; font-size: 14px; flex: 1; }
+    .loc-list-item .pts  { font-size: 12px; color: #94a3b8; }
+    .loc-list-item .status { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+    .loc-list-item .status.on  { background: #dcfce7; color: #15803d; }
+    .loc-list-item .status.off { background: #f1f5f9; color: #94a3b8; }
+
+    /* 하단 저장 버튼 */
+    .save-bar {
+      flex-shrink: 0; padding: 10px 16px;
+      background: #fff; border-top: 1px solid #e2e8f0;
+    }
+    .save-bar button {
+      width: 100%; padding: 14px; background: #7c3aed; color: #fff;
+      border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer;
+    }
+    .save-bar button:disabled { background: #cbd5e1; color: #94a3b8; cursor: default; }
+
+    /* 리플 */
+    .leaflet-popup-content-wrapper { border-radius: 10px; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<!-- 상단 바 -->
+<div class="top-bar">
+  <button onclick="goBack()">←</button>
+  <h2 id="page-title">장소 추가</h2>
+  <span class="edit-badge" id="edit-badge" style="display:none;">수정 중</span>
+</div>
+
+<!-- 지도 힌트 -->
+<div id="map-hint">📍 지도를 클릭해 위치를 선택하세요</div>
+
+<!-- 지도 -->
+<div id="map"></div>
+
+<!-- 하단 패널 -->
+<div class="panel">
+  <!-- 탭 헤더 -->
+  <div class="panel-header">
+    <button class="panel-tab active" id="tab-form-btn" onclick="switchTab('form')">✏️ 장소 정보</button>
+    <button class="panel-tab" id="tab-list-btn" onclick="switchTab('list')">📋 기존 장소 (<span id="loc-count">0</span>)</button>
+  </div>
+
+  <!-- 폼 탭 -->
+  <div class="panel-body" id="tab-form">
+
+    <!-- 선택된 위치 표시 -->
+    <div class="loc-badge unset" id="loc-badge">
+      📍 지도를 클릭해 위치를 선택하세요
+    </div>
+
+    <div class="fg">
+      <label>장소 이름 *</label>
+      <input type="text" id="loc-name" placeholder="예: A구역 체육관">
+    </div>
+
+    <div class="fg">
+      <label>퀴즈 모드</label>
+      <div class="radio-group">
+        <label><input type="radio" name="qmode" value="fixed" checked onchange="toggleQuizMode('fixed')"><span>📝 고정 문제</span></label>
+        <label><input type="radio" name="qmode" value="pool" onchange="toggleQuizMode('pool')"><span>🎲 문제 은행 랜덤</span></label>
+      </div>
+    </div>
+
+    <div class="fg">
+      <label>정답 포인트</label>
+      <input type="number" id="loc-points" value="100" min="0">
+    </div>
+
+    <div class="fg">
+      <label>공개 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(비워두면 즉시 공개)</span></label>
+      <input type="datetime-local" id="loc-startdate">
+    </div>
+
+    <!-- 고정 문제 섹션 -->
+    <div id="fixed-section">
+      <div class="fg">
+        <label>문제</label>
+        <textarea id="loc-question" rows="2" placeholder="퀴즈 문제를 입력하세요"></textarea>
+      </div>
+      <div class="fg">
+        <label>보기 (정답 라디오 선택)</label>
+        <div id="opts-wrap">
+          <div class="opt-row"><input type="radio" name="correct" value="0" checked><input type="text" class="opt" placeholder="보기 1"></div>
+          <div class="opt-row"><input type="radio" name="correct" value="1"><input type="text" class="opt" placeholder="보기 2"></div>
+          <div class="opt-row"><input type="radio" name="correct" value="2"><input type="text" class="opt" placeholder="보기 3"></div>
+          <div class="opt-row"><input type="radio" name="correct" value="3"><input type="text" class="opt" placeholder="보기 4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 문제 은행 안내 -->
+    <div id="pool-section" style="display:none;">
+      <div style="background:#faf5ff; border:1.5px solid #c4b5fd; border-radius:10px; padding:12px; font-size:13px; color:#7c3aed; line-height:1.6;">
+        🎲 문제 은행에서 참가자별로 다른 문제가 랜덤 배정돼요.<br>
+        <span style="color:#64748b;">관리자 → 📝 문제 은행에서 문제를 미리 추가해두세요.</span>
+      </div>
+    </div>
+
+    <input type="hidden" id="loc-lat">
+    <input type="hidden" id="loc-lng">
+    <input type="hidden" id="loc-edit-id">
+  </div>
+
+  <!-- 기존 장소 목록 탭 -->
+  <div class="panel-body" id="tab-list" style="display:none;">
+    <div id="locations-list-panel">
+      <p style="text-align:center; color:#94a3b8; padding:24px;">장소가 없어요</p>
+    </div>
+  </div>
+</div>
+
+<!-- 저장 버튼 -->
+<div class="save-bar">
+  <button id="save-btn" onclick="saveLocation()">장소 추가</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/config.js"></script>
+<script>
+  // ── 초기화 ────────────────────────────────────────
+  let map, mainMarker, existingMarkers = [];
+  let locationsData = [];
+  let selectedLat = null, selectedLng = null;
+
+  // URL 파라미터로 수정 모드 확인
+  const editId = new URLSearchParams(location.search).get('edit');
+  if (editId) {
+    document.getElementById('page-title').textContent = '장소 수정';
+    document.getElementById('edit-badge').style.display = 'inline';
+    document.getElementById('save-btn').textContent = '수정 저장';
+    document.getElementById('loc-edit-id').value = editId;
+  }
+
+  // ── 지도 초기화 ───────────────────────────────────
+  function initMap(lat, lng) {
+    const center = (lat && lng) ? [lat, lng] : (GAME_CONFIG.MAP_CENTER || [37.5665, 126.9780]);
+    const zoom   = (lat && lng) ? 17 : (GAME_CONFIG.MAP_ZOOM || 15);
+
+    map = L.map('map').setView(center, zoom);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap © CARTO'
+    }).addTo(map);
+
+    map.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+
+    if (lat && lng) placeMarker(lat, lng);
+  }
+
+  function placeMarker(lat, lng) {
+    selectedLat = lat;
+    selectedLng = lng;
+    document.getElementById('loc-lat').value = lat;
+    document.getElementById('loc-lng').value = lng;
+
+    if (mainMarker) mainMarker.setLatLng([lat, lng]);
+    else mainMarker = L.marker([lat, lng]).addTo(map);
+
+    map.panTo([lat, lng]);
+
+    document.getElementById('loc-badge').className = 'loc-badge set';
+    document.getElementById('loc-badge').textContent =
+      `📍 위도 ${lat.toFixed(5)}, 경도 ${lng.toFixed(5)}`;
+    document.getElementById('map-hint').classList.add('hidden');
+  }
+
+  // ── 기존 장소 마커 렌더 ───────────────────────────
+  function renderExistingMarkers(list) {
+    existingMarkers.forEach(m => map.removeLayer(m));
+    existingMarkers = [];
+
+    list.forEach(loc => {
+      if (!loc.lat || !loc.lng) return;
+      if (loc.id === editId) return;
+
+      const m = L.circleMarker([loc.lat, loc.lng], {
+        radius: 9, color: '#7c3aed', weight: 2,
+        fillColor: '#a855f7', fillOpacity: 0.75
+      }).addTo(map);
+
+      m.bindPopup(`
+        <div style="min-width:140px; font-size:13px;">
+          <b style="display:block; margin-bottom:4px;">${escHtml(loc.name)}</b>
+          <span style="color:#7c3aed;">⭐ ${loc.quiz?.points || 0}pt</span>
+          <div style="display:flex; gap:6px; margin-top:10px;">
+            <button onclick="goEdit('${loc.id}')"
+              style="flex:1; padding:6px 0; background:#ede9fe; border:none; border-radius:8px; color:#6d28d9; font-size:12px; font-weight:700; cursor:pointer;">✏️ 수정</button>
+            <button onclick="deleteLocation('${loc.id}', '${escHtml(loc.name).replace(/'/g, "\\'")}')"
+              style="flex:1; padding:6px 0; background:#fee2e2; border:none; border-radius:8px; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer;">🗑 삭제</button>
+          </div>
+        </div>`, { maxWidth: 200 });
+
+      existingMarkers.push(m);
+    });
+  }
+
+  async function deleteLocation(id, name) {
+    if (!confirm(`"${name}" 장소를 삭제할까요?\n참가자 완료 기록은 유지됩니다.`)) return;
+    try {
+      await db.collection('locations').doc(id).delete();
+      showToast(`"${name}" 삭제됐어요`);
+    } catch (e) {
+      alert('삭제 실패: ' + e.message);
+    }
+  }
+
+  // ── 기존 장소 목록 패널 렌더 ──────────────────────
+  function renderLocationList(list) {
+    document.getElementById('loc-count').textContent = list.length;
+    const el = document.getElementById('locations-list-panel');
+    if (list.length === 0) {
+      el.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:24px;">장소가 없어요</p>';
+      return;
+    }
+    el.innerHTML = list.map(loc => `
+      <div class="loc-list-item" onclick="flyTo(${loc.lat}, ${loc.lng})">
+        <div class="loc-dot"></div>
+        <div class="name">${escHtml(loc.name)}</div>
+        <div class="pts">⭐ ${loc.quiz?.points || 0}pt</div>
+        <span class="status ${loc.enabled ? 'on' : 'off'}">${loc.enabled ? '활성' : '비활성'}</span>
+        <button onclick="event.stopPropagation(); goEdit('${loc.id}')"
+          style="background:none;border:1.5px solid #e2e8f0;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;color:#7c3aed;font-weight:600;">수정</button>
+      </div>`).join('');
+  }
+
+  function flyTo(lat, lng) {
+    if (!lat || !lng) return;
+    switchTab('form');
+    map.flyTo([lat, lng], 17, { duration: 0.8 });
+  }
+
+  function goEdit(id) {
+    location.href = `add-location.html?edit=${id}`;
+  }
+
+  // ── Firestore 실시간 ──────────────────────────────
+  function listenLocations() {
+    db.collection('locations').onSnapshot(snap => {
+      locationsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // 지도가 없으면 먼저 초기화
+      if (!map) {
+        if (locationsData.length > 0 && !editId) {
+          const avgLat = locationsData.reduce((s, l) => s + (l.lat || 0), 0) / locationsData.length;
+          const avgLng = locationsData.reduce((s, l) => s + (l.lng || 0), 0) / locationsData.length;
+          initMap(avgLat, avgLng);
+          map.setZoom(GAME_CONFIG.MAP_ZOOM || 15);
+        } else {
+          initMap();
+        }
+      }
+
+      renderExistingMarkers(locationsData);
+      renderLocationList(locationsData);
+    });
+  }
+
+  // 수정 모드: 기존 데이터 로드
+  async function loadEditData() {
+    const snap = await db.collection('locations').doc(editId).get();
+    if (!snap.exists) { alert('장소를 찾을 수 없어요'); goBack(); return; }
+    const loc = snap.data();
+
+    document.getElementById('loc-name').value   = loc.name || '';
+    document.getElementById('loc-points').value = loc.quiz?.points || 100;
+    document.getElementById('loc-startdate').value = loc.startDate || '';
+
+    const mode = loc.quizMode || 'fixed';
+    document.querySelector(`input[name="qmode"][value="${mode}"]`).checked = true;
+    toggleQuizMode(mode);
+
+    if (mode === 'fixed' && loc.quiz) {
+      document.getElementById('loc-question').value = loc.quiz.question || '';
+      const opts = document.querySelectorAll('.opt');
+      (loc.quiz.options || []).forEach((o, i) => { if (opts[i]) opts[i].value = o; });
+      const r = document.querySelector(`input[name="correct"][value="${loc.quiz.correctIndex ?? 0}"]`);
+      if (r) r.checked = true;
+    }
+
+    // 지도가 이미 초기화된 경우
+    if (map && loc.lat && loc.lng) {
+      placeMarker(loc.lat, loc.lng);
+      map.setView([loc.lat, loc.lng], 17);
+    } else {
+      // initMap이 호출될 때까지 대기
+      const waitMap = setInterval(() => {
+        if (map) {
+          clearInterval(waitMap);
+          if (loc.lat && loc.lng) {
+            placeMarker(loc.lat, loc.lng);
+            map.setView([loc.lat, loc.lng], 17);
+          }
+        }
+      }, 100);
+    }
+  }
+
+  // ── 퀴즈 모드 토글 ───────────────────────────────
+  function toggleQuizMode(mode) {
+    document.getElementById('fixed-section').style.display = mode === 'fixed' ? 'block' : 'none';
+    document.getElementById('pool-section').style.display  = mode === 'pool'  ? 'block' : 'none';
+  }
+
+  // ── 탭 전환 ──────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('tab-form').style.display = tab === 'form' ? 'block' : 'none';
+    document.getElementById('tab-list').style.display = tab === 'list' ? 'block' : 'none';
+    document.getElementById('tab-form-btn').className = 'panel-tab' + (tab === 'form' ? ' active' : '');
+    document.getElementById('tab-list-btn').className = 'panel-tab' + (tab === 'list' ? ' active' : '');
+    if (map) map.invalidateSize();
+  }
+
+  // ── 저장 ─────────────────────────────────────────
+  async function saveLocation() {
+    const name = document.getElementById('loc-name').value.trim();
+    const lat  = parseFloat(document.getElementById('loc-lat').value);
+    const lng  = parseFloat(document.getElementById('loc-lng').value);
+    const mode = document.querySelector('input[name="qmode"]:checked').value;
+    const points = parseInt(document.getElementById('loc-points').value) || 100;
+    const startDate = document.getElementById('loc-startdate').value || '';
+
+    if (!name) { alert('장소 이름을 입력해주세요'); document.getElementById('loc-name').focus(); return; }
+    if (!lat || !lng) { alert('지도를 클릭해 위치를 선택해주세요'); switchTab('form'); return; }
+
+    let quiz = null;
+    if (mode === 'fixed') {
+      const question = document.getElementById('loc-question').value.trim();
+      const opts     = [...document.querySelectorAll('.opt')].map(el => el.value.trim());
+      const correct  = parseInt(document.querySelector('input[name="correct"]:checked').value);
+      if (!question) { alert('문제를 입력해주세요'); return; }
+      if (opts.some(o => !o)) { alert('보기를 모두 입력해주세요'); return; }
+      quiz = { question, options: opts, correctIndex: correct, points };
+    }
+
+    const data = {
+      name, lat, lng, enabled: true, startDate,
+      quizMode: mode,
+      quiz: quiz || { points },
+    };
+
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+
+    try {
+      const id = editId || document.getElementById('loc-edit-id').value;
+      if (id) {
+        await db.collection('locations').doc(id).update(data);
+        showToast('장소가 수정됐어요!');
+      } else {
+        await db.collection('locations').add(data);
+        showToast('장소가 추가됐어요!');
+        resetForm();
+      }
+    } catch (e) {
+      alert('저장에 실패했어요: ' + e.message);
+    }
+
+    btn.disabled = false;
+    btn.textContent = editId ? '수정 저장' : '장소 추가';
+  }
+
+  function resetForm() {
+    document.getElementById('loc-name').value = '';
+    document.getElementById('loc-points').value = '100';
+    document.getElementById('loc-startdate').value = '';
+    document.getElementById('loc-question').value = '';
+    document.querySelectorAll('.opt').forEach(el => { el.value = ''; });
+    document.querySelector('input[name="correct"][value="0"]').checked = true;
+    document.querySelector('input[name="qmode"][value="fixed"]').checked = true;
+    toggleQuizMode('fixed');
+
+    if (mainMarker) { map.removeLayer(mainMarker); mainMarker = null; }
+    selectedLat = null; selectedLng = null;
+    document.getElementById('loc-lat').value = '';
+    document.getElementById('loc-lng').value = '';
+    document.getElementById('loc-badge').className = 'loc-badge unset';
+    document.getElementById('loc-badge').textContent = '📍 지도를 클릭해 위치를 선택하세요';
+    document.getElementById('map-hint').classList.remove('hidden');
+  }
+
+  function goBack() { window.location.href = 'admin.html'; }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showToast(msg) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    Object.assign(t.style, {
+      position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px 20px',
+      borderRadius: '20px', fontSize: '14px', zIndex: '9999', whiteSpace: 'nowrap'
+    });
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  // ── 시작 ─────────────────────────────────────────
+  listenLocations();
+  if (editId) loadEditData();
+</script>
+</body>
+</html>

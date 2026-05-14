@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>상점 - 탐험 퀴즈 게임</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .item-grid { padding: 16px; display: grid; gap: 12px; }
+    .item-card {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow-sm);
+      border: 1.5px solid var(--border);
+      display: flex; align-items: center; gap: 14px;
+      transition: all 0.18s;
+    }
+    .item-card:hover { box-shadow: var(--shadow); border-color: var(--primary-lt); }
+    .item-emoji {
+      font-size: 42px; width: 60px; height: 60px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg2); border-radius: var(--radius-sm);
+      flex-shrink: 0;
+    }
+    .item-info { flex: 1; min-width: 0; }
+    .item-name { font-weight: 800; font-size: 15px; margin-bottom: 2px; color: var(--text); }
+    .item-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-meta { display: flex; align-items: center; gap: 8px; }
+    .item-price {
+      font-weight: 900; font-size: 14px;
+      background: var(--grad-gold);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .item-stock { font-size: 11px; color: var(--text-muted); font-weight: 600; background: var(--bg); padding: 2px 8px; border-radius: 99px; }
+    .shop-header-back {
+      background: rgba(255,255,255,0.2); border: 1.5px solid rgba(255,255,255,0.3);
+      color: #fff; width: 36px; height: 36px; border-radius: 50%;
+      font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="full-page">
+    <!-- 헤더 -->
+    <div class="shop-header">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="shop-header-back" onclick="window.location.href='map.html'">←</button>
+        <h2>🛒 상점</h2>
+      </div>
+      <div class="my-points">⭐ <span id="my-points">0</span>점</div>
+    </div>
+
+    <!-- 탭 -->
+    <div class="shop-tabs">
+      <button class="shop-tab active" onclick="switchShopTab('items', this)">상품 목록</button>
+      <button class="shop-tab" onclick="switchShopTab('history', this)">내 구매 내역</button>
+    </div>
+
+    <!-- 상품 목록 -->
+    <div class="tab-content active" id="tab-items" style="flex:1; overflow-y:auto;">
+      <div class="item-grid" id="item-grid">
+        <div class="empty-msg">상품을 불러오는 중...</div>
+      </div>
+    </div>
+
+    <!-- 구매 내역 -->
+    <div class="tab-content" id="tab-history" style="flex:1; overflow-y:auto; padding:16px;">
+      <div id="history-list"><div class="empty-msg">구매 내역이 없어요</div></div>
+    </div>
+  </div>
+
+  <!-- 구매 확인 모달 -->
+  <div class="modal-overlay" id="buy-modal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <h3>구매 확인</h3>
+      <div style="text-align:center; padding:16px 0;">
+        <div id="modal-emoji" style="font-size:56px; margin-bottom:12px;"></div>
+        <div id="modal-name" style="font-size:18px; font-weight:700; margin-bottom:6px;"></div>
+        <div id="modal-desc" style="font-size:14px; color:#64748b; margin-bottom:16px;"></div>
+        <div style="font-size:22px; font-weight:800; color:#7c3aed;" id="modal-price"></div>
+        <div style="font-size:13px; color:#94a3b8; margin-top:4px;">
+          보유: <span id="modal-mypoints"></span>점 → 구매 후: <span id="modal-after"></span>점
+        </div>
+      </div>
+      <button class="btn" style="background:#7c3aed; color:#fff; font-weight:700;" onclick="confirmBuy()">
+        구매하기
+      </button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/config.js"></script>
+  <script>
+    const nickname = getNickname();
+    if (!nickname) { window.location.href = 'index.html'; }
+
+    let myPoints = 0;
+    let myPurchases = [];
+    let pendingItem = null;
+
+    // ── 탭 전환 ──────────────────────────────────
+    function switchShopTab(id, btn) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.shop-tab').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    // ── 참가자 실시간 ─────────────────────────────
+    function listenParticipant() {
+      db.collection('participants').doc(nickname).onSnapshot(snap => {
+        if (!snap.exists) return;
+        myPoints = snap.data().points || 0;
+        document.getElementById('my-points').textContent = myPoints;
+        renderItems();
+      });
+    }
+
+    // ── 내 주문 내역 실시간 ───────────────────────
+    let myOrders = [];
+    function listenMyOrders() {
+      db.collection('orders')
+        .where('nickname', '==', nickname)
+        .onSnapshot(snap => {
+          myOrders = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.purchasedAt || '') > (a.purchasedAt || '') ? 1 : -1);
+          renderHistory();
+        });
+    }
+
+    // ── 상품 목록 실시간 ──────────────────────────
+    let itemsData = [];
+    function listenItems() {
+      db.collection('shop_items').onSnapshot(snap => {
+        itemsData = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(i => i.enabled);
+        renderItems();
+      });
+    }
+
+    function renderItems() {
+      const grid = document.getElementById('item-grid');
+      if (itemsData.length === 0) {
+        grid.innerHTML = '<div class="empty-msg">🛍️ 등록된 상품이 없어요</div>';
+        return;
+      }
+      grid.innerHTML = itemsData.map(item => {
+        const soldOut = item.stock === 0;
+        const alreadyBought = myPurchases.some(p => p.itemId === item.id);
+        const cantAfford = myPoints < item.price;
+        const disabled = soldOut || cantAfford;
+        const stockTxt = item.stock < 0 ? '무제한' : `남은 수량 ${item.stock}개`;
+        let btnText = '구매';
+        let btnClass = 'buy-btn';
+        if (soldOut) { btnText = '품절'; }
+        else if (cantAfford) { btnText = '포인트 부족'; }
+
+        return `
+          <div class="item-card">
+            <div class="item-emoji">${item.emoji || '🎁'}</div>
+            <div class="item-info">
+              <div class="item-name">${escHtml(item.name)}</div>
+              <div class="item-desc">${escHtml(item.description || '')}</div>
+              <div class="item-meta">
+                <span class="item-price">⭐ ${item.price}점</span>
+                <span class="item-stock">${stockTxt}</span>
+              </div>
+            </div>
+            <button class="${btnClass}" ${disabled ? 'disabled' : ''}
+              onclick="openBuyModal('${item.id}')">
+              ${btnText}
+            </button>
+          </div>`;
+      }).join('');
+    }
+
+    // ── 구매 내역 ─────────────────────────────────
+    function renderHistory() {
+      const el = document.getElementById('history-list');
+      if (!myOrders.length) {
+        el.innerHTML = '<div class="empty-msg">아직 구매한 상품이 없어요</div>';
+        return;
+      }
+      el.innerHTML = myOrders.map(o => {
+        const time = o.purchasedAt ? new Date(o.purchasedAt).toLocaleString('ko-KR') : '';
+        if (o.confirmed) {
+          return `
+            <div class="purchase-row">
+              <div>
+                <div class="item-n">${o.emoji || '🎁'} ${escHtml(o.itemName)}</div>
+                <div style="margin-top:3px;">
+                  <span style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:10px; font-weight:600;">✅ 수령 완료</span>
+                </div>
+                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">${time}</div>
+              </div>
+              <div class="item-p">-${o.price}점</div>
+            </div>`;
+        } else {
+          return `
+            <div class="purchase-row" style="border-left:3px solid #f59e0b; padding-left:13px;">
+              <div style="flex:1;">
+                <div class="item-n">${o.emoji || '🎁'} ${escHtml(o.itemName)}</div>
+                <div style="margin-top:3px;">
+                  <span style="font-size:11px; background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:10px; font-weight:600;">🕐 수령 대기</span>
+                </div>
+                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">${time}</div>
+                <button onclick="confirmReceived('${o.id}')"
+                  style="margin-top:8px; background:#7c3aed; color:#fff; border:none; border-radius:8px;
+                         padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; display:block;">
+                  ✅ 수령 완료
+                </button>
+              </div>
+              <div class="item-p">-${o.price}점</div>
+            </div>`;
+        }
+      }).join('');
+    }
+
+    async function confirmReceived(orderId) {
+      if (!confirm('판매자에게 상품을 받으셨나요?\n수령 완료로 변경하면 되돌릴 수 없어요.')) return;
+      await db.collection('orders').doc(orderId).update({
+        confirmed: true,
+        confirmedAt: new Date().toISOString(),
+      });
+      showToast('수령 완료 처리됐어요 🎉');
+    }
+
+    // ── 구매 모달 ─────────────────────────────────
+    function openBuyModal(itemId) {
+      const item = itemsData.find(i => i.id === itemId);
+      if (!item) return;
+      pendingItem = item;
+      document.getElementById('modal-emoji').textContent   = item.emoji || '🎁';
+      document.getElementById('modal-name').textContent    = item.name;
+      document.getElementById('modal-desc').textContent    = item.description || '';
+      document.getElementById('modal-price').textContent   = `⭐ ${item.price}점`;
+      document.getElementById('modal-mypoints').textContent = myPoints;
+      document.getElementById('modal-after').textContent   = myPoints - item.price;
+      document.getElementById('buy-modal').classList.add('visible');
+    }
+
+    function closeModal() {
+      document.getElementById('buy-modal').classList.remove('visible');
+      pendingItem = null;
+    }
+
+    async function confirmBuy() {
+      if (!pendingItem) return;
+      const item = pendingItem;
+      closeModal();
+
+      if (myPoints < item.price) { showToast('포인트가 부족해요'); return; }
+      if (item.stock === 0)      { showToast('품절된 상품이에요'); return; }
+
+      try {
+        await db.runTransaction(async tx => {
+          const pRef    = db.collection('participants').doc(nickname);
+          const iRef    = db.collection('shop_items').doc(item.id);
+          const pSnap   = await tx.get(pRef);
+          const iSnap   = await tx.get(iRef);
+
+          if (!pSnap.exists) throw new Error('참가자 없음');
+          if (!iSnap.exists) throw new Error('상품 없음');
+
+          const pts   = pSnap.data().points || 0;
+          const stock = iSnap.data().stock;
+
+          if (pts < item.price)  throw new Error('포인트 부족');
+          if (stock === 0)       throw new Error('품절');
+
+          tx.update(pRef, {
+            points: firebase.firestore.FieldValue.increment(-item.price),
+          });
+
+          if (stock > 0) {
+            tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
+          }
+        });
+
+        // orders 컬렉션에 주문 기록 (트랜잭션 밖에서)
+        await db.collection('orders').add({
+          nickname,
+          itemId:    item.id,
+          itemName:  item.name,
+          emoji:     item.emoji || '🎁',
+          price:     item.price,
+          confirmed: false,
+          purchasedAt: new Date().toISOString(),
+        });
+
+        showToast(`🎉 ${item.name} 구매 완료! 판매자에게 수령하세요`);
+      } catch (e) {
+        showToast(e.message || '구매에 실패했어요');
+      }
+    }
+
+    function escHtml(str) {
+      return String(str || '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // 모달 외부 클릭 닫기
+    document.getElementById('buy-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('buy-modal')) closeModal();
+    });
+
+    listenParticipant();
+    listenItems();
+    listenMyOrders();
+  </script>
+</body>
+</html>
