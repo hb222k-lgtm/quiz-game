@@ -734,9 +734,15 @@ function editQuizBankItem(id) {
 
 async function saveQuizBankItem() {
   const question = document.getElementById('qb-question').value.trim();
-  const options  = [...document.querySelectorAll('.qb-opt-input')].map(el => el.value.trim()).filter(Boolean);
-  const correctIndex = parseInt(document.querySelector('input[name="qb-correct"]:checked')?.value ?? 0);
+  const rawOptions = [...document.querySelectorAll('.qb-opt-input')].map(el => el.value.trim());
+  const correctIndexRaw = parseInt(document.querySelector('input[name="qb-correct"]:checked')?.value ?? 0);
   const editId = document.getElementById('qb-edit-id').value;
+
+  // 빈 보기 필터링 전에 정답 텍스트 저장 (필터 후 인덱스 재계산)
+  const correctValue = rawOptions[correctIndexRaw];
+  if (!correctValue) { showToast('정답으로 선택한 보기가 비어있어요'); return; }
+  const options = rawOptions.filter(Boolean);
+  const correctIndex = options.indexOf(correctValue);
 
   if (!question) { showToast('문제를 입력해주세요'); return; }
   if (options.length < 2) { showToast('보기를 2개 이상 입력해주세요'); return; }
@@ -945,9 +951,13 @@ async function saveLocation() {
   if (mode === 'pool') {
     data = { name, lat, lng, enabled: true, startDate, quizMode: 'pool', quiz: { points: pts } };
   } else {
-    const q    = document.getElementById('loc-question').value.trim();
-    const opts = [...document.querySelectorAll('.opt-input')].map(el => el.value.trim()).filter(Boolean);
-    const correctIndex = parseInt(document.querySelector('input[name="correct"]:checked')?.value ?? 0);
+    const q       = document.getElementById('loc-question').value.trim();
+    const rawOpts = [...document.querySelectorAll('.opt-input')].map(el => el.value.trim());
+    const correctIndexRaw = parseInt(document.querySelector('input[name="correct"]:checked')?.value ?? 0);
+    const correctOptValue = rawOpts[correctIndexRaw];
+    if (!correctOptValue) { showToast('정답으로 선택한 보기가 비어있어요'); return; }
+    const opts = rawOpts.filter(Boolean);
+    const correctIndex = opts.indexOf(correctOptValue);
     if (!q || opts.length < 2) { showToast('문제와 보기를 2개 이상 입력해주세요'); return; }
     data = { name, lat, lng, enabled: true, startDate, quizMode: 'fixed',
              quiz: { question: q, options: opts, correctIndex, points: pts } };
@@ -1148,7 +1158,8 @@ function showQRImage(id) {
   const url = GAME_CONFIG.SITE_URL + `qr-scan.html?code=${id}`;
   openQRModal();
   document.getElementById('qr-label').value = qr.label;
-  document.getElementById('qr-points').value = qr.points;
+  // 퀴즈형 QR은 quizPoints 필드 사용, 포인트형은 points 필드 사용
+  document.getElementById('qr-points').value = qr.type === 'quiz' ? (qr.quizPoints || 0) : (qr.points || 0);
 
   setTimeout(() => {
     document.getElementById('qr-gen-result').style.display = 'block';
@@ -1356,20 +1367,25 @@ async function saveShopItem() {
   const name  = document.getElementById('item-name').value.trim();
   const desc  = document.getElementById('item-desc').value.trim();
   const price = parseInt(document.getElementById('item-price').value) || 100;
-  const stock = parseInt(document.getElementById('item-stock').value) ?? -1;
+  const stockRaw = parseInt(document.getElementById('item-stock').value);
+  const stock = isNaN(stockRaw) ? -1 : stockRaw;  // NaN이면 무제한(-1)으로 처리
   const editId = document.getElementById('item-edit-id').value;
 
   if (!name) { showToast('상품명을 입력해주세요'); return; }
 
   const data = { emoji, name, description: desc, price, stock, enabled: true };
-  if (editId) {
-    await db.collection('shop_items').doc(editId).update(data);
-    showToast('상품이 수정됐어요');
-  } else {
-    await db.collection('shop_items').add(data);
-    showToast('상품이 추가됐어요');
+  try {
+    if (editId) {
+      await db.collection('shop_items').doc(editId).update(data);
+      showToast('상품이 수정됐어요');
+    } else {
+      await db.collection('shop_items').add(data);
+      showToast('상품이 추가됐어요');
+    }
+    closeModal('shop-item-modal');
+  } catch (e) {
+    showToast('저장 실패: ' + e.message);
   }
-  closeModal('shop-item-modal');
 }
 
 async function toggleShopItem(id, enabled) {
@@ -1438,8 +1454,8 @@ async function addTestData() {
         quiz: { question: '서울의 별명은?', options: ['한강의 기적','빛의 도시','동방의 빛','천년의 수도'], correctIndex: 0, points: 150 } },
     ];
     for (const loc of locs) await db.collection('locations').add(loc);
-    await db.collection('qrcodes').doc('sample-qr-001').set({ label: '샘플 QR 1번', points: 50, enabled: true, usedBy: [] });
-    await db.collection('qrcodes').doc('sample-qr-002').set({ label: '샘플 QR 2번', points: 80, enabled: true, usedBy: [] });
+    await db.collection('qrcodes').doc('sample-qr-001').set({ type: 'points', label: '샘플 QR 1번', points: 50, enabled: true, usedBy: [] });
+    await db.collection('qrcodes').doc('sample-qr-002').set({ type: 'points', label: '샘플 QR 2번', points: 80, enabled: true, usedBy: [] });
     showToast('테스트 데이터가 추가됐어요!');
   }
 }
@@ -1454,7 +1470,8 @@ function escHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');  // onclick 속성에서 단일 따옴표 오류 방지
 }
 
 // 모달 외부 클릭으로 닫기

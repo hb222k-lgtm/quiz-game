@@ -96,7 +96,7 @@
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
-    if (!nickname) { window.location.href = 'index.html'; }
+    if (!nickname) { window.location.href = 'index.html'; return; }
 
     let myPoints = 0;
     let myPurchases = [];
@@ -152,13 +152,14 @@
       }
       grid.innerHTML = itemsData.map(item => {
         const soldOut = item.stock === 0;
-        const alreadyBought = myPurchases.some(p => p.itemId === item.id);
+        const alreadyBought = myOrders.some(o => o.itemId === item.id);
         const cantAfford = myPoints < item.price;
-        const disabled = soldOut || cantAfford;
+        const disabled = soldOut || alreadyBought || cantAfford;
         const stockTxt = item.stock < 0 ? '무제한' : `남은 수량 ${item.stock}개`;
         let btnText = '구매';
         let btnClass = 'buy-btn';
         if (soldOut) { btnText = '품절'; }
+        else if (alreadyBought) { btnText = '구매 완료'; }
         else if (cantAfford) { btnText = '포인트 부족'; }
 
         return `
@@ -268,14 +269,15 @@
           if (!pSnap.exists) throw new Error('참가자 없음');
           if (!iSnap.exists) throw new Error('상품 없음');
 
-          const pts   = pSnap.data().points || 0;
-          const stock = iSnap.data().stock;
+          const pts      = pSnap.data().points || 0;
+          const stock    = iSnap.data().stock;
+          const serverPrice = iSnap.data().price || 0; // 서버 최신 가격 사용
 
-          if (pts < item.price)  throw new Error('포인트 부족');
+          if (pts < serverPrice) throw new Error('포인트 부족');
           if (stock === 0)       throw new Error('품절');
 
           tx.update(pRef, {
-            points: firebase.firestore.FieldValue.increment(-item.price),
+            points: firebase.firestore.FieldValue.increment(-serverPrice),
           });
 
           if (stock > 0) {
@@ -283,8 +285,8 @@
           }
         });
 
-        // orders 컬렉션에 주문 기록 (트랜잭션 밖에서)
-        await db.collection('orders').add({
+        // orders 컬렉션에 주문 기록
+        const orderData = {
           nickname,
           itemId:    item.id,
           itemName:  item.name,
@@ -292,7 +294,13 @@
           price:     item.price,
           confirmed: false,
           purchasedAt: new Date().toISOString(),
-        });
+        };
+        try {
+          await db.collection('orders').add(orderData);
+        } catch (orderErr) {
+          // 주문 기록 실패 시 1회 재시도
+          try { await db.collection('orders').add(orderData); } catch (_) {}
+        }
 
         showToast(`🎉 ${item.name} 구매 완료! 판매자에게 수령하세요`);
       } catch (e) {

@@ -89,11 +89,11 @@
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
-    if (!nickname) { window.location.href = 'index.html'; }
+    if (!nickname) { window.location.href = 'index.html'; return; }
 
     const params  = new URLSearchParams(location.search);
     const locId   = params.get('loc');
-    if (!locId) { window.location.href = 'map.html'; }
+    if (!locId) { window.location.href = 'map.html'; return; }
 
     let locationData = null;
     let answered = false;
@@ -277,6 +277,7 @@
       document.getElementById('question-text').textContent = quiz.question;
 
       const container = document.getElementById('options-container');
+      container.innerHTML = '';  // 재시도 시 중복 방지
       (quiz.options || []).forEach((opt, i) => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';

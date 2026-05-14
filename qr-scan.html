@@ -85,7 +85,7 @@
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
-    if (!nickname) { window.location.href = 'index.html'; }
+    if (!nickname) { window.location.href = 'index.html'; return; }
 
     let scanner = null;
     let processing = false;
@@ -215,12 +215,15 @@
 
         try {
           const pts = parseInt(quiz.points) || 0;
-          await db.collection('participants').doc(nickname).update({
+          // batch로 묶어서 포인트와 usedBy를 동시에 원자적으로 기록
+          const batch = db.batch();
+          batch.update(db.collection('participants').doc(nickname), {
             points: firebase.firestore.FieldValue.increment(pts)
           });
-          await db.collection('qrcodes').doc(qrData.id).update({
+          batch.update(db.collection('qrcodes').doc(qrData.id), {
             usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
           });
+          await batch.commit();
           showResult(true, `🎉 정답! +${pts}점 획득!`);
         } catch (e) {
           console.error('QR quiz answer error:', e);
