@@ -3,7 +3,7 @@
    Target: 중고등학생 / 게임 UI 감성
    ══════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800;900&display=swap');
+/* Google Fonts 제거 → 시스템 폰트 사용 (렌더링 블로킹 방지, 속도 향상) */
 
 /* ── 토큰 ─────────────────────────────────── */
 :root {
@@ -44,7 +44,8 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* 시스템 한글 폰트 우선 사용: iOS=Apple SD Gothic Neo, Android=Noto Sans KR 내장 */
+  font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
