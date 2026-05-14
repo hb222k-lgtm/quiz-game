@@ -193,17 +193,25 @@
           qrData._quiz = { ...chosen, points: isNaN(qrPts) ? 100 : qrPts };
           showQRQuiz(qrData);
         } else {
-          // 포인트 즉시 지급
+          // 포인트 즉시 지급 — 트랜잭션 내에서 usedBy 재확인 (동시 스캔 중복 방지)
           await db.runTransaction(async tx => {
             const pRef = db.collection('participants').doc(nickname);
             const qRef = db.collection('qrcodes').doc(code);
+            const qSnap = await tx.get(qRef);
+            if ((qSnap.data()?.usedBy || []).includes(nickname)) {
+              throw new Error('ALREADY_USED');
+            }
             tx.update(pRef, { points: firebase.firestore.FieldValue.increment(qrData.points) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
           showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${qrData.points}점 획득!`);
         }
       } catch (e) {
-        showResult(false, '오류가 발생했어요. 다시 시도해주세요.');
+        if (e.message === 'ALREADY_USED') {
+          showResult(false, '이미 스캔한 QR 코드예요.');
+        } else {
+          showResult(false, '오류가 발생했어요. 다시 시도해주세요.');
+        }
       }
     }
 
@@ -240,15 +248,20 @@
 
         try {
           const pts = parseInt(quiz.points) || 0;
-          // batch로 묶어서 포인트와 usedBy를 동시에 원자적으로 기록
-          const batch = db.batch();
-          batch.update(db.collection('participants').doc(nickname), {
-            points: firebase.firestore.FieldValue.increment(pts)
+          // transaction으로 포인트·usedBy 동시 기록 + 중복 방지 재확인
+          await db.runTransaction(async tx => {
+            const qRef = db.collection('qrcodes').doc(qrData.id);
+            const qSnap = await tx.get(qRef);
+            if ((qSnap.data()?.usedBy || []).includes(nickname)) {
+              throw new Error('ALREADY_USED');
+            }
+            tx.update(db.collection('participants').doc(nickname), {
+              points: firebase.firestore.FieldValue.increment(pts)
+            });
+            tx.update(qRef, {
+              usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
+            });
           });
-          batch.update(db.collection('qrcodes').doc(qrData.id), {
-            usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
-          });
-          await batch.commit();
           // QR 퀴즈 문제 배분 통계 업데이트 (다음 참가자에게 다른 문제 배정)
           if (currentQRCode?.id && quiz.id) {
             db.collection('qr_quiz_assignments').doc(currentQRCode.id).set(
@@ -259,9 +272,12 @@
           showResult(true, `🎉 정답! +${pts}점 획득!`);
         } catch (e) {
           console.error('QR quiz answer error:', e);
-          showResult(false, '오류가 발생했어요: ' + e.message);
+          if (e.message === 'ALREADY_USED') {
+            showResult(false, '이미 처리된 QR 코드예요. (다른 기기에서 처리됨)');
+          } else {
+            showResult(false, '오류가 발생했어요: ' + e.message);
+          }
         }
-        document.getElementById('scan-again-wrap').style.display = 'block';
 
       } else {
         // 오답
