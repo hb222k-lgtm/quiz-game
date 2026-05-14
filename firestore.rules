@@ -2,23 +2,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 참가자: 본인 문서만 수정 가능, 읽기는 모두 허용 (리더보드용)
+    // 참가자 (읽기/쓰기 모두 허용 - 리더보드, 포인트)
     match /participants/{nickname} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
+      allow read, write: if true;
     }
 
-    // 장소: 읽기만 허용 (수정은 Firebase 콘솔 또는 관리자 앱에서)
+    // 장소 (읽기/쓰기 허용 - 관리자 포함)
     match /locations/{locationId} {
-      allow read: if true;
-      allow write: if true;  // 배포 후 관리자 인증 추가 권장
+      allow read, write: if true;
     }
 
-    // QR 코드: 읽기/쓰기 허용 (스캔 기록 업데이트용)
+    // QR 코드 (읽기/쓰기 허용 - 스캔 기록)
     match /qrcodes/{qrId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+    }
+
+    // 문제 은행 (읽기/쓰기 허용)
+    match /quiz_bank/{qId} {
+      allow read, write: if true;
+    }
+
+    // 문제 배정 통계 (읽기/쓰기 허용)
+    match /quiz_assignments/{locId} {
+      allow read, write: if true;
+    }
+
+    // QR 퀴즈 배정 통계 (읽기/쓰기 허용)
+    match /qr_quiz_assignments/{qrId} {
+      allow read, write: if true;
+    }
+
+    // 상점 상품 (읽기/쓰기 허용)
+    match /shop_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    // 주문 내역 (읽기/쓰기 허용)
+    match /orders/{orderId} {
+      allow read, write: if true;
     }
   }
 }
