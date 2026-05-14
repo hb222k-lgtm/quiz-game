@@ -93,6 +93,7 @@
     if (!nickname) { window.location.href = 'index.html'; }
 
     let scanner = null;
+    if (!nickname) { document.body.innerHTML = ''; } // redirect 후 실행 방지
     let processing = false;
 
     function startScanner() {
@@ -170,7 +171,9 @@
             .map(q => ({ ...q, count: stats[q.id] || 0 }))
             .sort((a, b) => a.count - b.count || Math.random() - 0.5)[0];
 
-          qrData._quiz = { ...chosen, points: parseInt(qrData.quizPoints) || 100 };
+          // parseInt(0)||100 이 100을 반환하는 버그 방지: nullish coalescing 사용
+          const qrPts = qrData.quizPoints != null ? parseInt(qrData.quizPoints) : 100;
+          qrData._quiz = { ...chosen, points: isNaN(qrPts) ? 100 : qrPts };
           showQRQuiz(qrData);
         } else {
           // 포인트 즉시 지급
@@ -229,6 +232,13 @@
             usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
           });
           await batch.commit();
+          // QR 퀴즈 문제 배분 통계 업데이트 (다음 참가자에게 다른 문제 배정)
+          if (currentQRCode?.id && quiz.id) {
+            db.collection('qr_quiz_assignments').doc(currentQRCode.id).set(
+              { [quiz.id]: firebase.firestore.FieldValue.increment(1) },
+              { merge: true }
+            ).catch(() => {});
+          }
           showResult(true, `🎉 정답! +${pts}점 획득!`);
         } catch (e) {
           console.error('QR quiz answer error:', e);

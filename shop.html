@@ -102,7 +102,6 @@
     if (!nickname) { window.location.href = 'index.html'; }
 
     let myPoints = 0;
-    let myPurchases = [];
     let pendingItem = null;
 
     // ── 탭 전환 ──────────────────────────────────
@@ -115,6 +114,7 @@
 
     // ── 참가자 실시간 ─────────────────────────────
     function listenParticipant() {
+      if (!nickname) return;
       db.collection('participants').doc(nickname).onSnapshot(snap => {
         if (!snap.exists) return;
         myPoints = snap.data().points || 0;
@@ -126,13 +126,15 @@
     // ── 내 주문 내역 실시간 ───────────────────────
     let myOrders = [];
     function listenMyOrders() {
+      if (!nickname) return;
       db.collection('orders')
         .where('nickname', '==', nickname)
         .onSnapshot(snap => {
           myOrders = snap.docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .sort((a, b) => (b.purchasedAt || '') > (a.purchasedAt || '') ? 1 : -1);
+            .sort((a, b) => (b.purchasedAt || '') < (a.purchasedAt || '') ? 1 : -1); // 최신순
           renderHistory();
+          renderItems(); // 구매완료 버튼 상태 갱신
         });
     }
 

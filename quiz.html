@@ -104,6 +104,7 @@
     let currentQuestion = null; // 현재 표시 중인 문제 (pool/fixed 공통)
 
     async function init() {
+      if (!nickname || !locId) return;  // redirect 후 실행 방지
       try {
         // 장소 데이터 로드
         const locSnap = await db.collection('locations').doc(locId).get();

@@ -387,6 +387,7 @@
 
     // ── 참가자 데이터 실시간 수신 ─────────────────
     function listenParticipant() {
+      if (!nickname) return;
       db.collection('participants').doc(nickname).onSnapshot(snap => {
         if (!snap.exists) return;
         participant = snap.data();
