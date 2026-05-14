@@ -37,7 +37,7 @@ if (!window.MOCK_MODE && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
   window.db = firebase.firestore();
 
   // 학교·교회 WiFi처럼 WebSocket이 막힌 네트워크에서도 작동하도록 Long Polling 사용
-  db.settings({ experimentalForceLongPolling: true, merge: true });
+  db.settings({ experimentalForceLongPolling: true });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -87,6 +87,15 @@ function genId() {
   const r2 = Math.random().toString(36).slice(2, 6);
   return `${t}-${r1}${r2}`;
 }
+
+// 전역 JS 오류 화면 표시 (디버그용)
+window.onerror = function(msg, src, line) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#ef4444;color:#fff;padding:10px 14px;font-size:12px;z-index:99999;word-break:break-all;';
+  d.textContent = '⚠️ JS 오류: ' + msg + ' (줄 ' + line + ')';
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 8000);
+};
 
 // 오프라인 감지 (현장 WiFi 불안정 대비)
 (function setupOfflineDetect() {
