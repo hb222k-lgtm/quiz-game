@@ -10,7 +10,7 @@
   <link rel="dns-prefetch" href="https://www.gstatic.com">
   <link rel="dns-prefetch" href="https://unpkg.com">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
   <style>
     html, body { height: 100%; overflow: hidden; }
     #map { width: 100%; height: 100%; }
@@ -123,7 +123,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
@@ -436,20 +436,38 @@
 
     // ── 초기화 ────────────────────────────────────
     document.getElementById('header-name').textContent = nickname;
-    initMap();
-    map.on('click', closePopupOnMapClick);
-    map.on('dragstart', () => {
-      if (followMode) {
-        followMode = false;
-        const btn = document.getElementById('follow-btn');
-        btn.textContent = '📍 따라가기 꺼짐';
-        btn.className = 'btn btn-outline';
-      }
-    });
-    startGPS();
-    startCompass();
-    loadLocations();
-    listenParticipant();
+
+    function startAll() {
+      initMap();
+      map.on('click', closePopupOnMapClick);
+      map.on('dragstart', () => {
+        if (followMode) {
+          followMode = false;
+          const btn = document.getElementById('follow-btn');
+          btn.textContent = '📍 따라가기 꺼짐';
+          btn.className = 'btn btn-outline';
+        }
+      });
+      startGPS();
+      startCompass();
+      loadLocations();
+      listenParticipant();
+    }
+
+    // Leaflet 로드 확인 후 시작 (CDN 실패 시 unpkg로 재시도)
+    if (typeof L !== 'undefined') {
+      startAll();
+    } else {
+      document.getElementById('gps-text').textContent = '지도 로딩 중...';
+      const fallback = document.createElement('script');
+      fallback.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      fallback.onload = startAll;
+      fallback.onerror = () => {
+        document.getElementById('header-name').textContent = '지도 로딩 실패';
+        document.getElementById('gps-text').textContent = '새로고침 해주세요';
+      };
+      document.head.appendChild(fallback);
+    }
 
     // 뒤로가기로 돌아왔을 때 포인트 즉시 갱신 (bfcache 대응)
     window.addEventListener('pageshow', (e) => {

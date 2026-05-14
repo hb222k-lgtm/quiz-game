@@ -35,6 +35,14 @@ const GAME_CONFIG = {
 if (!window.MOCK_MODE && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
   firebase.initializeApp(FIREBASE_CONFIG);
   window.db = firebase.firestore();
+
+  // 느린 네트워크/오프라인 대비: 로컬 캐시 활성화
+  db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+    // 이미 다른 탭에서 열려있거나 시크릿모드면 캐시 비활성화 (무시해도 됨)
+    if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+      console.warn('Firestore persistence error:', err);
+    }
+  });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
