@@ -92,11 +92,11 @@
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
-    if (!nickname) { window.location.href = 'index.html'; return; }
+    if (!nickname) { window.location.href = 'index.html'; }
 
     const params  = new URLSearchParams(location.search);
     const locId   = params.get('loc');
-    if (!locId) { window.location.href = 'map.html'; return; }
+    if (!locId) { window.location.href = 'map.html'; }
 
     let locationData = null;
     let answered = false;
