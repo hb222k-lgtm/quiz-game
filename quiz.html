@@ -88,6 +88,7 @@
           🗺️ 지도로 돌아가기
         </button>
       </div>
+      <div id="auto-redirect-msg" style="display:none; text-align:center; font-size:13px; color:var(--text-muted); padding-bottom:16px; font-weight:600;"></div>
     </div>
   </div>
 
@@ -315,7 +316,7 @@
         };
         await db.collection('participants').doc(nickname).update(updates);
         safeIncrementAssignment(locId, currentQuestion?.id);
-        backBtn.style.display = 'block';
+        autoRedirect();
 
       } else {
         attempts++;
@@ -339,9 +340,29 @@
             completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
           });
           safeIncrementAssignment(locId, currentQuestion?.id);
-          backBtn.style.display = 'block';
+          autoRedirect();
         }
       }
+    }
+
+    // 정답/오답 확정 후 자동으로 지도 복귀 (2초 카운트다운)
+    function autoRedirect(sec = 2) {
+      const backBtn = document.getElementById('back-btn');
+      const msg = document.getElementById('auto-redirect-msg');
+      backBtn.style.display = 'block';
+      backBtn.textContent = `🗺️ 지도로 돌아가기`;
+      msg.style.display = 'block';
+      msg.textContent = `${sec}초 후 자동으로 돌아가요`;
+
+      const timer = setInterval(() => {
+        sec--;
+        if (sec <= 0) {
+          clearInterval(timer);
+          window.location.href = 'map.html';
+        } else {
+          msg.textContent = `${sec}초 후 자동으로 돌아가요`;
+        }
+      }, 1000);
     }
 
     // quiz_assignments 쓰기는 통계용이라 실패해도 무시 (재시도 1회)
