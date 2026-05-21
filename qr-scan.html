@@ -47,6 +47,7 @@
       font-size: 16px; font-weight: 700; line-height: 1.6;
       margin-bottom: 16px; color: var(--text);
     }
+    .qr-result { white-space: pre-line; }
   </style>
 </head>
 <body>
@@ -167,6 +168,19 @@
           showResult(false, '비활성화된 QR 코드예요.');
           return;
         }
+
+        // 활성 기간 체크
+        const now = new Date();
+        if (qrData.startAt && new Date(qrData.startAt) > now) {
+          const t = new Date(qrData.startAt).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+          showResult(false, `⏳ 아직 활성화 전이에요.\n${t}부터 스캔 가능해요.`);
+          return;
+        }
+        if (qrData.endAt && new Date(qrData.endAt) < now) {
+          showResult(false, '⌛ 만료된 QR 코드예요.');
+          return;
+        }
+
         if ((qrData.usedBy || []).includes(nickname)) {
           showResult(false, '이미 스캔한 QR 코드예요.');
           return;

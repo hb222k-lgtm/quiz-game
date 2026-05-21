@@ -492,6 +492,18 @@
       </div>
     </div>
 
+    <!-- 활성 기간 설정 -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
+      <div>
+        <label>시작 일시 <span style="color:#94a3b8; font-weight:400;">(빈칸=즉시)</span></label>
+        <input type="datetime-local" id="qr-start-at">
+      </div>
+      <div>
+        <label>종료 일시 <span style="color:#94a3b8; font-weight:400;">(빈칸=무제한)</span></label>
+        <input type="datetime-local" id="qr-end-at">
+      </div>
+    </div>
+
     <button class="btn btn-primary" onclick="generateQR()">QR 코드 생성</button>
 
     <div class="qr-gen-box" id="qr-gen-result" style="display:none;">
@@ -687,13 +699,34 @@ function renderQRCodes() {
     const quizPreview = qr.type === 'quiz'
       ? `<div class="location-quiz" style="margin-top:6px;">📝 문제 은행 랜덤 배정 · +${qr.quizPoints || 0}점</div>`
       : '';
+
+    // 활성 기간 표시 + 현재 상태 배지
+    const now = new Date();
+    let periodHtml = '';
+    let statusBadge = '';
+    if (qr.startAt || qr.endAt) {
+      const start = qr.startAt ? new Date(qr.startAt) : null;
+      const end   = qr.endAt   ? new Date(qr.endAt)   : null;
+      const startStr = start ? start.toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '즉시';
+      const endStr   = end   ? end.toLocaleString('ko-KR',   {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '무제한';
+      periodHtml = `<p style="font-size:12px; color:#64748b; margin-top:4px;">🕐 ${startStr} ~ ${endStr}</p>`;
+      if (start && now < start) {
+        statusBadge = `<span class="badge badge-blue" style="font-size:11px; margin-left:4px;">⏳ 대기중</span>`;
+      } else if (end && now > end) {
+        statusBadge = `<span class="badge badge-gray" style="font-size:11px; margin-left:4px;">⌛ 만료</span>`;
+      } else {
+        statusBadge = `<span class="badge badge-green" style="font-size:11px; margin-left:4px;">✅ 활성</span>`;
+      }
+    }
+
     return `
     <div class="item-card">
-      <div style="display:flex; justify-content:space-between; align-items:start;">
-        <h4>${escHtml(qr.label || 'QR 코드')}</h4>
+      <div style="display:flex; justify-content:space-between; align-items:start; gap:8px; flex-wrap:wrap;">
+        <h4 style="flex:1;">${escHtml(qr.label || 'QR 코드')} ${statusBadge}</h4>
         ${badge}
       </div>
       <p>스캔: ${(qr.usedBy || []).length}명 &nbsp;·&nbsp; ID: <code style="font-size:11px;">${qr.id}</code></p>
+      ${periodHtml}
       ${quizPreview}
       ${(qr.usedBy || []).length > 0 ? `
         <p style="font-size:12px; color:#64748b; margin-top:4px;">
@@ -1187,6 +1220,8 @@ function openQRModal() {
   document.getElementById('qr-label').value = '';
   document.getElementById('qr-points').value = '50';
   document.getElementById('qr-quiz-points').value = '100';
+  document.getElementById('qr-start-at').value = '';
+  document.getElementById('qr-end-at').value = '';
   document.querySelector('input[name="qr-type"][value="points"]').checked = true;
   toggleQRType('points');
   document.getElementById('qr-gen-result').style.display = 'none';
@@ -1209,6 +1244,12 @@ async function generateQR() {
     // double / half / nothing — 포인트 필드 없음
     data = { label, type, enabled: true, usedBy: [] };
   }
+
+  // 활성 기간 저장 (빈칸이면 null → 제한 없음)
+  const startAt = document.getElementById('qr-start-at').value || null;
+  const endAt   = document.getElementById('qr-end-at').value   || null;
+  if (startAt) data.startAt = startAt;
+  if (endAt)   data.endAt   = endAt;
 
   const code = genId();
   await db.collection('qrcodes').doc(code).set({
@@ -1242,6 +1283,8 @@ function showQRImage(id) {
   } else if (qr.type === 'points' || qr.type === 'minus') {
     document.getElementById('qr-points').value = qr.points || 50;
   }
+  document.getElementById('qr-start-at').value = qr.startAt || '';
+  document.getElementById('qr-end-at').value   = qr.endAt   || '';
 
   setTimeout(() => {
     document.getElementById('qr-gen-result').style.display = 'block';
