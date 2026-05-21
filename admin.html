@@ -31,6 +31,16 @@
     .qr-gen-box { text-align: center; padding: 16px 0; }
     #qr-code-output canvas, #qr-code-output img { margin: 0 auto; border-radius: 8px; }
     .admin-login { max-width: 360px; margin: 80px auto; padding: 0 16px; }
+    /* QR 종류 선택 버튼 */
+    .qr-type-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 9px 6px; border: 2px solid #e2e8f0; border-radius: 10px;
+      cursor: pointer; font-weight: 700; font-size: 11px; color: #64748b;
+      text-align: center; transition: all 0.15s; line-height: 1.2;
+    }
+    .qr-type-btn:hover { border-color: #a78bfa; color: #4c1d95; background: #faf5ff; }
+    .qr-type-btn.active { border-color: #7c3aed; background: #faf5ff; color: #6d28d9; }
+    .qr-type-btn span { font-size: 11px; }
   </style>
 </head>
 <body>
@@ -431,22 +441,43 @@
 
     <div class="form-group">
       <label>QR 종류</label>
-      <div style="display:flex; gap:20px;">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
-          <input type="radio" name="qr-type" value="points" checked onchange="toggleQRType('points')">
-          💰 포인트 즉시 지급
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px;">
+        <label class="qr-type-btn" id="qropt-points">
+          <input type="radio" name="qr-type" value="points" checked onchange="toggleQRType('points')" style="display:none">
+          💰<span>포인트 지급</span>
         </label>
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:600;">
-          <input type="radio" name="qr-type" value="quiz" onchange="toggleQRType('quiz')">
-          ❓ 퀴즈 출제
+        <label class="qr-type-btn" id="qropt-minus">
+          <input type="radio" name="qr-type" value="minus" onchange="toggleQRType('minus')" style="display:none">
+          📉<span>포인트 차감</span>
+        </label>
+        <label class="qr-type-btn" id="qropt-double">
+          <input type="radio" name="qr-type" value="double" onchange="toggleQRType('double')" style="display:none">
+          🎰<span>점수 2배</span>
+        </label>
+        <label class="qr-type-btn" id="qropt-half">
+          <input type="radio" name="qr-type" value="half" onchange="toggleQRType('half')" style="display:none">
+          ✂️<span>점수 절반</span>
+        </label>
+        <label class="qr-type-btn" id="qropt-nothing">
+          <input type="radio" name="qr-type" value="nothing" onchange="toggleQRType('nothing')" style="display:none">
+          💨<span>꽝!</span>
+        </label>
+        <label class="qr-type-btn" id="qropt-quiz">
+          <input type="radio" name="qr-type" value="quiz" onchange="toggleQRType('quiz')" style="display:none">
+          ❓<span>퀴즈 출제</span>
         </label>
       </div>
     </div>
 
-    <!-- 포인트 섹션 -->
-    <div id="qr-points-section" class="form-group">
-      <label>포인트</label>
+    <!-- 포인트/차감 섹션 -->
+    <div id="qr-amount-section" class="form-group">
+      <label id="qr-amount-label">지급 포인트</label>
       <input type="number" id="qr-points" value="50" min="1">
+    </div>
+
+    <!-- 2배/절반/꽝 안내 -->
+    <div id="qr-effect-section" style="display:none;">
+      <div id="qr-effect-msg" style="border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; line-height:1.6;"></div>
     </div>
 
     <!-- 퀴즈 섹션 -->
@@ -652,11 +683,8 @@ function renderQRCodes() {
     return;
   }
   el.innerHTML = qrCodesData.map(qr => {
-    const isQuiz = qr.type === 'quiz';
-    const badge  = isQuiz
-      ? `<span class="badge" style="background:#ede9fe; color:#6d28d9;">❓ 퀴즈 +${qr.quizPoints || 0}점</span>`
-      : `<span class="badge badge-gold">💰 +${qr.points}점</span>`;
-    const quizPreview = isQuiz
+    const badge = qrBadgeHtml(qr);
+    const quizPreview = qr.type === 'quiz'
       ? `<div class="location-quiz" style="margin-top:6px;">📝 문제 은행 랜덤 배정 · +${qr.quizPoints || 0}점</div>`
       : '';
     return `
@@ -1114,9 +1142,45 @@ function printAllQR() {
 }
 
 // ── QR 생성 ───────────────────────────────────────
+const QR_TYPE_INFO = {
+  points:  { label: '💰 포인트 지급',  color: '#d97706', bg: '#fef9c3' },
+  minus:   { label: '📉 포인트 차감',  color: '#dc2626', bg: '#fee2e2' },
+  double:  { label: '🎰 점수 2배',     color: '#7c3aed', bg: '#ede9fe' },
+  half:    { label: '✂️ 점수 절반',    color: '#ea580c', bg: '#fff7ed' },
+  nothing: { label: '💨 꽝',           color: '#64748b', bg: '#f1f5f9' },
+  quiz:    { label: '❓ 퀴즈',         color: '#6d28d9', bg: '#ede9fe' },
+};
+
+const QR_EFFECT_DESC = {
+  double:  { bg: '#faf5ff', color: '#6d28d9', text: '🎰 스캔한 사람의 현재 점수가 2배가 돼요!\n예: 100점 → 200점' },
+  half:    { bg: '#fff7ed', color: '#9a3412', text: '✂️ 스캔한 사람의 현재 점수가 절반으로 줄어요!\n예: 100점 → 50점' },
+  nothing: { bg: '#f8fafc', color: '#475569', text: '💨 스캔해도 아무 일도 일어나지 않아요. 꽝 QR이에요 😄' },
+};
+
 function toggleQRType(type) {
-  document.getElementById('qr-points-section').style.display = type === 'points' ? 'block' : 'none';
-  document.getElementById('qr-quiz-section').style.display   = type === 'quiz'   ? 'block' : 'none';
+  // 버튼 스타일 갱신
+  ['points','minus','double','half','nothing','quiz'].forEach(t => {
+    document.getElementById('qropt-' + t)?.classList.toggle('active', t === type);
+  });
+  // 섹션 표시
+  const showAmount = type === 'points' || type === 'minus';
+  document.getElementById('qr-amount-section').style.display = showAmount ? 'block' : 'none';
+  document.getElementById('qr-amount-label').textContent =
+    type === 'minus' ? '차감 포인트' : '지급 포인트';
+  document.getElementById('qr-quiz-section').style.display = type === 'quiz' ? 'block' : 'none';
+  const effectInfo = QR_EFFECT_DESC[type];
+  const effectEl = document.getElementById('qr-effect-section');
+  if (effectInfo) {
+    effectEl.style.display = 'block';
+    const msg = document.getElementById('qr-effect-msg');
+    msg.style.background = effectInfo.bg;
+    msg.style.color = effectInfo.color;
+    msg.style.border = `1.5px solid ${effectInfo.color}30`;
+    msg.style.whiteSpace = 'pre-line';
+    msg.textContent = effectInfo.text;
+  } else {
+    effectEl.style.display = 'none';
+  }
 }
 
 function openQRModal() {
@@ -1138,9 +1202,12 @@ async function generateQR() {
   if (type === 'quiz') {
     const pts = parseInt(document.getElementById('qr-quiz-points').value) || 100;
     data = { label, type: 'quiz', quizPoints: pts, enabled: true, usedBy: [] };
-  } else {
+  } else if (type === 'points' || type === 'minus') {
     const points = parseInt(document.getElementById('qr-points').value) || 50;
-    data = { label, type: 'points', points, enabled: true, usedBy: [] };
+    data = { label, type, points, enabled: true, usedBy: [] };
+  } else {
+    // double / half / nothing — 포인트 필드 없음
+    data = { label, type, enabled: true, usedBy: [] };
   }
 
   const code = genId();
@@ -1167,8 +1234,14 @@ function showQRImage(id) {
   const url = GAME_CONFIG.SITE_URL + `qr-scan.html?code=${id}`;
   openQRModal();
   document.getElementById('qr-label').value = qr.label;
-  // 퀴즈형 QR은 quizPoints 필드 사용, 포인트형은 points 필드 사용
-  document.getElementById('qr-points').value = qr.type === 'quiz' ? (qr.quizPoints || 0) : (qr.points || 0);
+  // 타입별 폼 값 복원
+  const radio = document.querySelector(`input[name="qr-type"][value="${qr.type || 'points'}"]`);
+  if (radio) { radio.checked = true; toggleQRType(qr.type || 'points'); }
+  if (qr.type === 'quiz') {
+    document.getElementById('qr-quiz-points').value = qr.quizPoints || 100;
+  } else if (qr.type === 'points' || qr.type === 'minus') {
+    document.getElementById('qr-points').value = qr.points || 50;
+  }
 
   setTimeout(() => {
     document.getElementById('qr-gen-result').style.display = 'block';
@@ -1466,6 +1539,18 @@ async function addTestData() {
     await db.collection('qrcodes').doc('sample-qr-001').set({ type: 'points', label: '샘플 QR 1번', points: 50, enabled: true, usedBy: [] });
     await db.collection('qrcodes').doc('sample-qr-002').set({ type: 'points', label: '샘플 QR 2번', points: 80, enabled: true, usedBy: [] });
     showToast('테스트 데이터가 추가됐어요!');
+  }
+}
+
+// QR 배지 HTML 생성
+function qrBadgeHtml(qr) {
+  switch (qr.type) {
+    case 'minus':   return `<span class="badge" style="background:#fee2e2;color:#dc2626;">📉 -${qr.points||0}점</span>`;
+    case 'double':  return `<span class="badge" style="background:#ede9fe;color:#7c3aed;">🎰 점수 2배</span>`;
+    case 'half':    return `<span class="badge" style="background:#fff7ed;color:#ea580c;">✂️ 점수 절반</span>`;
+    case 'nothing': return `<span class="badge" style="background:#f1f5f9;color:#64748b;">💨 꽝</span>`;
+    case 'quiz':    return `<span class="badge" style="background:#ede9fe;color:#6d28d9;">❓ 퀴즈 +${qr.quizPoints||0}점</span>`;
+    default:        return `<span class="badge badge-gold">💰 +${qr.points||0}점</span>`;
   }
 }
 
