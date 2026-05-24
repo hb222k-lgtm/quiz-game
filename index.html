@@ -32,6 +32,20 @@
     }
     .chip span { font-size: 20px; }
     #saved-name { font-weight: 900; font-size: 22px; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    /* 게임 기간 안내 카드 */
+    #period-block-card {
+      display: none;
+      background: #fff;
+      border-radius: 20px;
+      padding: 32px 20px;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(124,58,237,0.1);
+      margin-bottom: 20px;
+    }
+    #period-block-card .block-icon { font-size: 52px; margin-bottom: 12px; }
+    #period-block-card h2 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+    #period-block-card p  { font-size: 14px; color: #64748b; line-height: 1.6; }
+    #period-countdown { font-size: 22px; font-weight: 800; color: #7c3aed; margin-top: 14px; letter-spacing: 1px; }
 
     /* ── PWA 설치 배너 ── */
     #pwa-banner {
@@ -93,6 +107,14 @@
       <div class="hero-icon">🗺️</div>
       <h1>탐험 퀴즈 게임</h1>
       <p>지도의 장소를 찾아가서<br>퀴즈를 풀고 포인트를 모으세요!</p>
+    </div>
+
+    <!-- 게임 기간 외 차단 카드 -->
+    <div id="period-block-card">
+      <div class="block-icon" id="block-icon">⏳</div>
+      <h2 id="block-title">게임 준비 중</h2>
+      <p id="block-desc">잠시 후 시작돼요!</p>
+      <div id="period-countdown"></div>
     </div>
 
     <div class="card" id="login-card">
@@ -168,12 +190,78 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="js/config.js"></script>
   <script>
-    const saved = getNickname();
-    if (saved) {
-      document.getElementById('login-card').style.display = 'none';
-      document.getElementById('continue-card').style.display = 'block';
-      document.getElementById('saved-name').textContent = saved;
+    // ── 게임 기간 체크 ─────────────────────────────
+    let _countdownTimer = null;
+
+    async function checkGamePeriod() {
+      try {
+        const snap = await db.collection('config').doc('gameSettings').get();
+        const d = snap.data() || {};
+        const now = new Date();
+        const start = d.startDate?.toDate ? d.startDate.toDate() : null;
+        const end   = d.endDate?.toDate   ? d.endDate.toDate()   : null;
+
+        if (start && now < start) {
+          showPeriodBlock('before', start);
+          return false;
+        }
+        if (end && now > end) {
+          showPeriodBlock('after', end);
+          return false;
+        }
+        return true;
+      } catch(e) {
+        return true; // 오류 시 허용
+      }
     }
+
+    function showPeriodBlock(type, date) {
+      document.getElementById('login-card').style.display = 'none';
+      document.getElementById('continue-card').style.display = 'none';
+      document.getElementById('period-block-card').style.display = 'block';
+
+      if (type === 'before') {
+        document.getElementById('block-icon').textContent = '⏳';
+        document.getElementById('block-title').textContent = '게임 준비 중이에요';
+        document.getElementById('block-desc').textContent =
+          `${date.toLocaleString('ko-KR')} 에 공개돼요.\n조금만 기다려주세요!`;
+        startCountdown(date);
+      } else {
+        document.getElementById('block-icon').textContent = '🏁';
+        document.getElementById('block-title').textContent = '게임이 종료됐어요';
+        document.getElementById('block-desc').textContent =
+          `${date.toLocaleString('ko-KR')} 에 종료됐어요.\n수고하셨습니다! 🎉`;
+        document.getElementById('period-countdown').textContent = '';
+      }
+    }
+
+    function startCountdown(targetDate) {
+      function tick() {
+        const diff = targetDate - new Date();
+        if (diff <= 0) { location.reload(); return; }
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        document.getElementById('period-countdown').textContent =
+          `${h > 0 ? h + '시간 ' : ''}${m}분 ${s}초 후 시작`;
+      }
+      tick();
+      clearInterval(_countdownTimer);
+      _countdownTimer = setInterval(tick, 1000);
+    }
+
+    // 페이지 로드 시 기간 체크 후 UI 표시
+    (async () => {
+      const ok = await checkGamePeriod();
+      if (!ok) return;
+
+      const saved = getNickname();
+      if (saved) {
+        document.getElementById('login-card').style.display = 'none';
+        document.getElementById('continue-card').style.display = 'block';
+        document.getElementById('saved-name').textContent = saved;
+      }
+    })();
 
     function newGame() {
       clearNickname();

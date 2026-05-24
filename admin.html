@@ -193,6 +193,30 @@
     <!-- ── 설정 탭 ── -->
     <div class="tab-panel" id="tab-settings">
 
+      <!-- 게임 기간 설정 카드 -->
+      <div class="card mt-16" id="game-period-card">
+        <h3 style="font-weight:700; margin-bottom:4px;">🗓️ 게임 기간 설정</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">공개 날짜와 종료 날짜를 설정해요. 기간 외에는 참가자 입장이 차단돼요.</p>
+
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">📅 게임 시작</label>
+          <input type="datetime-local" id="game-start-date"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; outline:none; box-sizing:border-box;">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">🏁 게임 종료</label>
+          <input type="datetime-local" id="game-end-date"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; outline:none; box-sizing:border-box;">
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="saveGamePeriod()">💾 저장</button>
+          <button class="btn btn-outline" onclick="clearGamePeriod()">기간 해제</button>
+        </div>
+
+        <div id="game-period-status" style="display:none; margin-top:12px; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; text-align:center;"></div>
+      </div>
+
       <div class="card mt-16">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <h3 style="font-weight:700;">참가자 관리</h3>
@@ -641,10 +665,12 @@ function switchTab(id, btn) {
   document.getElementById('tab-' + id).classList.add('active');
   btn.classList.add('active');
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
+  if (id === 'settings') loadGamePeriod();
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
 function initAdmin() {
+  loadGamePeriod();
   loadMilestonesAdmin();
   listenLeaderboard();
   listenLocations();
@@ -1711,6 +1737,68 @@ function qrBadgeHtml(qr) {
     case 'nothing': return `<span class="badge" style="background:#f1f5f9;color:#64748b;">💨 꽝</span>`;
     case 'quiz':    return `<span class="badge" style="background:#ede9fe;color:#6d28d9;">❓ 퀴즈 +${qr.quizPoints||0}점</span>`;
     default:        return `<span class="badge badge-gold">💰 +${qr.points||0}점</span>`;
+  }
+}
+
+// ── 게임 기간 설정 ───────────────────────────────
+function _toLocalInput(date) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date - offset).toISOString().slice(0, 16);
+}
+
+async function loadGamePeriod() {
+  try {
+    const snap = await db.collection('config').doc('gameSettings').get();
+    const d = snap.data() || {};
+    if (d.startDate) document.getElementById('game-start-date').value = _toLocalInput(d.startDate.toDate());
+    if (d.endDate)   document.getElementById('game-end-date').value   = _toLocalInput(d.endDate.toDate());
+    renderGamePeriodStatus(d);
+  } catch(e) {}
+}
+
+async function saveGamePeriod() {
+  const sv = document.getElementById('game-start-date').value;
+  const ev = document.getElementById('game-end-date').value;
+  if (!sv && !ev) { showToast('날짜를 입력해주세요'); return; }
+  if (sv && ev && new Date(sv) >= new Date(ev)) { showToast('종료일이 시작일보다 빨라요 ⚠️'); return; }
+  const data = {};
+  if (sv) data.startDate = firebase.firestore.Timestamp.fromDate(new Date(sv));
+  if (ev) data.endDate   = firebase.firestore.Timestamp.fromDate(new Date(ev));
+  await db.collection('config').doc('gameSettings').set(data, { merge: true });
+  showToast('게임 기간이 저장됐어요 ✅');
+  renderGamePeriodStatus(data);
+}
+
+async function clearGamePeriod() {
+  if (!confirm('게임 기간 설정을 해제할까요?')) return;
+  await db.collection('config').doc('gameSettings').set(
+    { startDate: firebase.firestore.FieldValue.delete(), endDate: firebase.firestore.FieldValue.delete() },
+    { merge: true }
+  );
+  document.getElementById('game-start-date').value = '';
+  document.getElementById('game-end-date').value = '';
+  document.getElementById('game-period-status').style.display = 'none';
+  showToast('기간 설정이 해제됐어요');
+}
+
+function renderGamePeriodStatus(data) {
+  const el = document.getElementById('game-period-status');
+  if (!el) return;
+  const toDate = v => v?.toDate ? v.toDate() : (v ? new Date(v) : null);
+  const start = toDate(data.startDate);
+  const end   = toDate(data.endDate);
+  if (!start && !end) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const now = new Date();
+  if (start && now < start) {
+    el.style.cssText += 'background:#fef9c3;color:#92400e;';
+    el.textContent = `⏳ 시작 전 — ${start.toLocaleString('ko-KR')} 공개 예정`;
+  } else if (end && now > end) {
+    el.style.cssText += 'background:#fee2e2;color:#991b1b;';
+    el.textContent = `🔒 종료됨 — ${end.toLocaleString('ko-KR')} 종료`;
+  } else {
+    el.style.cssText += 'background:#dcfce7;color:#166534;';
+    el.textContent = `✅ 진행 중${end ? ' — ' + end.toLocaleString('ko-KR') + ' 종료' : ''}`;
   }
 }
 
