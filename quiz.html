@@ -440,7 +440,7 @@
         const time = timeLabel || (a.sentAt ? timeAgo(a.sentAt.toDate()) : '');
         if (navigator.vibrate)
           navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
-        if (!document.hasFocus() && Notification.permission === 'granted')
+        if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted')
           new Notification(`${icon} ${a.title||'공지'}`, { body: a.message, tag:'announce' });
         closePopup();
         const overlay = document.createElement('div');
@@ -487,10 +487,10 @@
           const sentDate = a.sentAt.toDate();
           if ((Date.now() - sentDate.getTime()) > 30 * 60000) return;
           const readKey = 'read_announce_' + a.uid;
-          if (sessionStorage.getItem(readKey)) return;
+          if (localStorage.getItem(readKey)) return;
           lastUid = a.uid;
           window._showAnnouncePopup(a, timeAgo(sentDate));
-          sessionStorage.setItem(readKey, '1');
+          localStorage.setItem(readKey, '1');
         } catch(e) { console.warn('최근 공지 오류:', e); }
       })();
     })();
