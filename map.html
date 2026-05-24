@@ -536,7 +536,7 @@
     }
 
     // ── 공지 수신 ─────────────────────────────────
-    let _lastAnnounceId = null;
+    let _lastAnnounceUid = null;
 
     function requestNotifPermission() {
       if ('Notification' in window && Notification.permission === 'default') {
@@ -546,18 +546,17 @@
 
     function listenAnnouncements() {
       const since = new Date();
-      db.collection('announcements')
-        .orderBy('sentAt', 'desc').limit(1)
+      // orderBy 없이 단일 문서 감시 → 인덱스 불필요, 즉각 수신
+      db.collection('config').doc('latestAnnouncement')
         .onSnapshot(snap => {
-          if (snap.empty) return;
-          const doc = snap.docs[0];
-          if (doc.id === _lastAnnounceId) return;
-          const a = doc.data();
-          // sentAt이 null이면 아직 서버 타임스탬프 처리 중 → id 캐시하지 말고 skip
-          if (!a.sentAt || a.sentAt.toDate() < since) return;
-          _lastAnnounceId = doc.id; // sentAt 검증 후에 캐시
+          if (!snap.exists) return;
+          const a = snap.data();
+          if (!a.sentAt || !a.uid) return;
+          if (a.uid === _lastAnnounceUid) return;          // 페이지 열기 전에 보낸 공지는 접속 시 별도 처리
+          if (a.sentAt.toDate() < since) return;
+          _lastAnnounceUid = a.uid;
           showAnnouncePopup(a);
-        });
+        }, err => console.warn('공지 수신 오류:', err));
     }
 
     function _timeAgo(date) {
@@ -619,24 +618,20 @@
     // 접속 시 최근 공지 확인 (30분 이내)
     async function checkRecentAnnouncement() {
       try {
-        const snap = await db.collection('announcements')
-          .orderBy('sentAt', 'desc').limit(1).get();
-        if (snap.empty) return;
-        const doc = snap.docs[0];
-        const a = doc.data();
-        if (!a.sentAt) return;
+        const snap = await db.collection('config').doc('latestAnnouncement').get();
+        if (!snap.exists) return;
+        const a = snap.data();
+        if (!a.sentAt || !a.uid) return;
         const sentDate = a.sentAt.toDate();
-        const minsAgo = (Date.now() - sentDate.getTime()) / 60000;
-        if (minsAgo > 30) return; // 30분 넘으면 표시 안 함
+        if ((Date.now() - sentDate.getTime()) > 30 * 60000) return;
 
-        // 이미 읽은 공지면 스킵
-        const readKey = 'read_announce_' + doc.id;
+        const readKey = 'read_announce_' + a.uid;
         if (sessionStorage.getItem(readKey)) return;
 
-        _lastAnnounceId = doc.id;
+        _lastAnnounceUid = a.uid;
         showAnnouncePopup(a, _timeAgo(sentDate));
         sessionStorage.setItem(readKey, '1');
-      } catch(e) {}
+      } catch(e) { console.warn('최근 공지 확인 오류:', e); }
     }
 
     function escHtml(s) {

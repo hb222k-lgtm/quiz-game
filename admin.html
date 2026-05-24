@@ -1881,11 +1881,16 @@ async function sendAnnouncementInline() {
   if (btn) { btn.disabled = true; btn.textContent = '전송 중...'; }
 
   try {
-    await db.collection('announcements').add({
+    const payload = {
       message, type: _announceType,
       title: TITLES[_announceType] || '공지',
       sentAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+      uid: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    };
+    // 히스토리 저장
+    await db.collection('announcements').add(payload);
+    // 실시간 전달용 단일 문서 (인덱스 없이 onSnapshot으로 바로 수신)
+    await db.collection('config').doc('latestAnnouncement').set(payload);
     showToast('공지를 보냈어요! 📢');
     document.getElementById('announce-message-inline').value = '';
     loadRecentAnnouncements('inline');
