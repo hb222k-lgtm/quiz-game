@@ -143,6 +143,61 @@
 
     /* 리플 */
     .leaflet-popup-content-wrapper { border-radius: 10px; font-size: 13px; }
+
+    /* 일괄 추가 토글 버튼 */
+    #batch-toggle-btn {
+      margin-left: auto;
+      background: rgba(255,255,255,0.18);
+      border: 1.5px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #batch-toggle-btn.active {
+      background: rgba(255,255,255,0.35);
+      border-color: #fff;
+    }
+
+    /* 일괄 패널 */
+    #batch-panel { display: none; }
+    .batch-pin-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .batch-pin-item:last-child { border-bottom: none; }
+    .batch-pin-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0;
+    }
+    .batch-pin-item input[type=text] {
+      flex: 1; padding: 7px 10px; border: 1.5px solid #e2e8f0;
+      border-radius: 8px; font-size: 13px; outline: none;
+    }
+    .batch-pin-item input[type=text]:focus { border-color: #7c3aed; }
+    .batch-pin-remove {
+      background: none; border: none; color: #94a3b8;
+      font-size: 18px; cursor: pointer; padding: 0 4px;
+      flex-shrink: 0; line-height: 1;
+    }
+    .batch-pin-remove:hover { color: #ef4444; }
+
+    /* 색상 스와치 */
+    .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+    .color-swatch {
+      width: 28px; height: 28px; border-radius: 50%;
+      cursor: pointer; border: 3px solid transparent;
+      transition: border-color 0.15s, transform 0.15s;
+      flex-shrink: 0;
+    }
+    .color-swatch.selected { border-color: #1e293b; transform: scale(1.15); }
+
+    /* 일괄 저장 버튼 강조 */
+    #save-btn.batch-mode { background: #6d28d9; }
   </style>
 </head>
 <body>
@@ -152,6 +207,7 @@
   <button onclick="goBack()">←</button>
   <h2 id="page-title">장소 추가</h2>
   <span class="edit-badge" id="edit-badge" style="display:none;">수정 중</span>
+  <button id="batch-toggle-btn" onclick="toggleBatchMode()" style="display:none;">📌 일괄 추가</button>
 </div>
 
 <!-- 지도 힌트 -->
@@ -242,6 +298,49 @@
       <p style="text-align:center; color:#94a3b8; padding:24px;">장소가 없어요</p>
     </div>
   </div>
+
+  <!-- 일괄 추가 패널 -->
+  <div class="panel-body" id="batch-panel">
+    <div id="batch-pins-list">
+      <p style="text-align:center; color:#94a3b8; padding:16px 0 8px;">📌 지도를 클릭해 핀을 추가하세요</p>
+    </div>
+
+    <div style="border-top:1px solid #e2e8f0; margin-top:8px; padding-top:12px;">
+      <div class="fg">
+        <label>그룹 색상</label>
+        <div class="color-swatches" id="batch-color-swatches">
+          <div class="color-swatch selected" style="background:#7c3aed;" data-color="#7c3aed" onclick="selectBatchColor(this)"></div>
+          <div class="color-swatch" style="background:#ef4444;" data-color="#ef4444" onclick="selectBatchColor(this)"></div>
+          <div class="color-swatch" style="background:#f59e0b;" data-color="#f59e0b" onclick="selectBatchColor(this)"></div>
+          <div class="color-swatch" style="background:#10b981;" data-color="#10b981" onclick="selectBatchColor(this)"></div>
+          <div class="color-swatch" style="background:#3b82f6;" data-color="#3b82f6" onclick="selectBatchColor(this)"></div>
+          <div class="color-swatch" style="background:#ec4899;" data-color="#ec4899" onclick="selectBatchColor(this)"></div>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label>퀴즈 모드</label>
+        <div class="radio-group">
+          <label><input type="radio" name="batch-qmode" value="pool" checked><span>🎲 문제 은행 랜덤</span></label>
+          <label><input type="radio" name="batch-qmode" value="fixed"><span>📝 고정 문제</span></label>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label>정답 포인트</label>
+        <input type="number" id="batch-points" value="100" min="0">
+      </div>
+
+      <div class="fg">
+        <label>📅 공개 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(선택)</span></label>
+        <input type="datetime-local" id="batch-startdate">
+      </div>
+      <div class="fg">
+        <label>🏁 종료 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(선택)</span></label>
+        <input type="datetime-local" id="batch-enddate">
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- 저장 버튼 -->
@@ -259,6 +358,12 @@
   let locationsData = [];
   let selectedLat = null, selectedLng = null;
 
+  // ── 일괄 추가 상태 ───────────────────────────────
+  let batchMode = false;
+  let batchPoints = [];   // [{lat, lng, name}]
+  let batchMarkers = [];  // L.marker[]
+  let batchColor = '#7c3aed';
+
   // GPS 추적
   let gpsWatchId = null, gpsMarker = null;
   let gpsLat = null, gpsLng = null, gpsFirstFix = true;
@@ -271,6 +376,9 @@
     document.getElementById('edit-badge').style.display = 'inline';
     document.getElementById('save-btn').textContent = '수정 저장';
     document.getElementById('loc-edit-id').value = editId;
+  } else {
+    // 추가 모드에서만 일괄 추가 버튼 표시
+    document.getElementById('batch-toggle-btn').style.display = 'inline';
   }
 
   // ── 지도 초기화 ───────────────────────────────────
@@ -283,7 +391,10 @@
       maxZoom: 19, attribution: '© OpenStreetMap © CARTO'
     }).addTo(map);
 
-    map.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+    map.on('click', e => {
+      if (batchMode) addBatchPin(e.latlng.lat, e.latlng.lng);
+      else placeMarker(e.latlng.lat, e.latlng.lng);
+    });
 
     // 드래그 시 자동 따라가기 꺼짐
     map.on('dragstart', () => {
@@ -420,9 +531,10 @@
       if (!loc.lat || !loc.lng) return;
       if (loc.id === editId) return;
 
+      const locColor = loc.color || '#a855f7';
       const m = L.circleMarker([loc.lat, loc.lng], {
-        radius: 9, color: '#7c3aed', weight: 2,
-        fillColor: '#a855f7', fillOpacity: 0.75
+        radius: 9, color: locColor, weight: 2,
+        fillColor: locColor, fillOpacity: 0.75
       }).addTo(map);
 
       m.bindPopup(`
@@ -461,7 +573,7 @@
     }
     el.innerHTML = list.map(loc => `
       <div class="loc-list-item" onclick="flyTo(${loc.lat}, ${loc.lng})">
-        <div class="loc-dot"></div>
+        <div class="loc-dot" style="background:${loc.color || '#a855f7'};"></div>
         <div class="name">${escHtml(loc.name)}</div>
         <div class="pts">⭐ ${loc.quiz?.points || 0}pt</div>
         <span class="status ${loc.enabled ? 'on' : 'off'}">${loc.enabled ? '활성' : '비활성'}</span>
@@ -560,6 +672,8 @@
 
   // ── 저장 ─────────────────────────────────────────
   async function saveLocation() {
+    if (batchMode) { await saveBatch(); return; }
+
     const name = document.getElementById('loc-name').value.trim();
     const lat  = parseFloat(document.getElementById('loc-lat').value);
     const lng  = parseFloat(document.getElementById('loc-lng').value);
@@ -648,6 +762,183 @@
     });
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
+  }
+
+  // ── 일괄 추가 기능 ───────────────────────────────
+
+  function toggleBatchMode() {
+    batchMode = !batchMode;
+    const btn = document.getElementById('batch-toggle-btn');
+    const hint = document.getElementById('map-hint');
+    const tabForm = document.getElementById('tab-form');
+    const tabList = document.getElementById('tab-list');
+    const batchPanel = document.getElementById('batch-panel');
+    const panelHeader = document.querySelector('.panel-header');
+    const saveBtn = document.getElementById('save-btn');
+
+    if (batchMode) {
+      btn.classList.add('active');
+      btn.textContent = '✕ 일괄 취소';
+      hint.textContent = '📌 여러 곳을 클릭해 핀을 꽂으세요';
+      hint.classList.remove('hidden');
+      tabForm.style.display = 'none';
+      tabList.style.display = 'none';
+      batchPanel.style.display = 'block';
+      panelHeader.style.display = 'none';
+      saveBtn.classList.add('batch-mode');
+      updateBatchSaveBtn();
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = '📌 일괄 추가';
+      hint.textContent = '📍 지도를 클릭해 위치를 선택하세요';
+      if (selectedLat) hint.classList.add('hidden');
+      tabForm.style.display = 'block';
+      tabList.style.display = 'none';
+      batchPanel.style.display = 'none';
+      panelHeader.style.display = 'flex';
+      saveBtn.classList.remove('batch-mode');
+      saveBtn.textContent = editId ? '수정 저장' : '장소 추가';
+      // 배치 핀 정리
+      resetBatch();
+    }
+  }
+
+  function addBatchPin(lat, lng) {
+    const n = batchPoints.length + 1;
+    batchPoints.push({ lat, lng, name: `장소 ${n}` });
+
+    // 번호 마커 생성
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="background:${batchColor};color:#fff;border-radius:50%;width:28px;height:28px;font-weight:bold;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${n}</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+    const marker = L.marker([lat, lng], { icon }).addTo(map);
+    batchMarkers.push(marker);
+
+    renderBatchPinsList();
+    updateBatchSaveBtn();
+  }
+
+  function removeBatchPin(idx) {
+    // 지도에서 마커 제거
+    if (batchMarkers[idx]) {
+      map.removeLayer(batchMarkers[idx]);
+    }
+    batchPoints.splice(idx, 1);
+    batchMarkers.splice(idx, 1);
+
+    // 남은 마커 번호 다시 그리기
+    batchMarkers.forEach((m, i) => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${batchColor};color:#fff;border-radius:50%;width:28px;height:28px;font-weight:bold;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${i + 1}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      m.setIcon(icon);
+    });
+
+    renderBatchPinsList();
+    updateBatchSaveBtn();
+  }
+
+  function renderBatchPinsList() {
+    const el = document.getElementById('batch-pins-list');
+    if (batchPoints.length === 0) {
+      el.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:16px 0 8px;">📌 지도를 클릭해 핀을 추가하세요</p>';
+      return;
+    }
+    el.innerHTML = batchPoints.map((p, i) => `
+      <div class="batch-pin-item">
+        <div class="batch-pin-num" style="background:${batchColor};">${i + 1}</div>
+        <input type="text" value="${escHtml(p.name)}" oninput="batchPoints[${i}].name=this.value"
+          placeholder="장소 이름">
+        <button class="batch-pin-remove" onclick="removeBatchPin(${i})" title="제거">✕</button>
+      </div>`).join('');
+  }
+
+  function updateBatchSaveBtn() {
+    const btn = document.getElementById('save-btn');
+    const n = batchPoints.length;
+    btn.textContent = n > 0 ? `📌 ${n}곳 일괄 저장` : '📌 핀을 추가하세요';
+    btn.disabled = n === 0;
+  }
+
+  function selectBatchColor(el) {
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+    batchColor = el.dataset.color;
+
+    // 기존 마커들 색상 업데이트
+    batchMarkers.forEach((m, i) => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${batchColor};color:#fff;border-radius:50%;width:28px;height:28px;font-weight:bold;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">${i + 1}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      m.setIcon(icon);
+    });
+    renderBatchPinsList();
+  }
+
+  async function saveBatch() {
+    if (batchPoints.length === 0) return;
+
+    const groupId = Date.now().toString(36);
+    const quizMode = document.querySelector('input[name="batch-qmode"]:checked').value;
+    const points = parseInt(document.getElementById('batch-points').value) || 100;
+    const startDate = document.getElementById('batch-startdate').value || '';
+    const endDate = document.getElementById('batch-enddate').value || '';
+    const color = batchColor;
+
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+
+    try {
+      const batch = db.batch();
+      batchPoints.forEach(p => {
+        const ref = db.collection('locations').doc();
+        batch.set(ref, {
+          name: p.name || `장소`,
+          lat: p.lat,
+          lng: p.lng,
+          enabled: true,
+          startDate,
+          endDate,
+          quizMode,
+          quiz: { points },
+          group: groupId,
+          color
+        });
+      });
+      await batch.commit();
+      const n = batchPoints.length;
+      showToast(`${n}곳이 저장됐어요!`);
+      resetBatch();
+      // 일괄 모드 종료
+      batchMode = true; // toggleBatchMode가 false로 바꿀 것
+      toggleBatchMode();
+    } catch (e) {
+      alert('저장 실패: ' + e.message);
+      btn.disabled = false;
+      updateBatchSaveBtn();
+    }
+  }
+
+  function resetBatch() {
+    batchMarkers.forEach(m => map && map.removeLayer(m));
+    batchMarkers = [];
+    batchPoints = [];
+    batchColor = '#7c3aed';
+    // 색상 스와치 초기화
+    document.querySelectorAll('.color-swatch').forEach((s, i) => {
+      s.classList.toggle('selected', i === 0);
+    });
+    renderBatchPinsList();
   }
 
   // ── 시작 ─────────────────────────────────────────

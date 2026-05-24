@@ -805,7 +805,9 @@ function renderLocations() {
   el.innerHTML = locationsData.map(loc => `
     <div class="item-card">
       <div style="display:flex; justify-content:space-between; align-items:start;">
-        <h4>${escHtml(loc.name)}</h4>
+        <h4 style="display:flex; align-items:center; gap:7px;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${loc.color || '#a855f7'}; flex-shrink:0;"></span>
+          ${escHtml(loc.name)}</h4>
         <span class="badge ${loc.enabled ? 'badge-green' : 'badge-gray'}">${loc.enabled ? '활성' : '비활성'}</span>
       </div>
       <p>📍 ${loc.lat?.toFixed?.(5) ?? loc.lat}, ${loc.lng?.toFixed?.(5) ?? loc.lng} &nbsp;·&nbsp; 📅 ${loc.startDate ? new Date(loc.startDate).toLocaleString('ko-KR') + '부터 공개' : '즉시 공개'}</p>
@@ -1070,9 +1072,10 @@ function initPickerMap(lat, lng) {
   locationsData.forEach(loc => {
     if (!loc.lat || !loc.lng) return;
     if (loc.id === editingId) return; // 편집 중인 장소는 제외 (파란 마커로 표시됨)
+    const locColor = loc.color || '#a855f7';
     const m = L.circleMarker([loc.lat, loc.lng], {
-      radius: 8, color: '#7c3aed', weight: 2,
-      fillColor: '#a855f7', fillOpacity: 0.7
+      radius: 8, color: locColor, weight: 2,
+      fillColor: locColor, fillOpacity: 0.7
     }).bindTooltip(loc.name, { permanent: false, direction: 'top' }).addTo(pickerMap);
     existingLocMarkers.push(m);
   });
