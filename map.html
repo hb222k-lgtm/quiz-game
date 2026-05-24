@@ -224,24 +224,38 @@
       });
     }
 
+    // ── 위치 스무딩 (표시용) ──────────────────────
+    let _smLat = null, _smLng = null;
+    function _smoothPos(lat, lng, accuracy) {
+      if (_smLat === null) { _smLat = lat; _smLng = lng; return { lat, lng }; }
+      // 정확도 낮을수록(숫자 클수록) 이전 위치 더 많이 반영
+      const w = accuracy < 20 ? 0.75 : accuracy < 50 ? 0.55 : 0.35;
+      _smLat = lat * w + _smLat * (1 - w);
+      _smLng = lng * w + _smLng * (1 - w);
+      return { lat: _smLat, lng: _smLng };
+    }
+
     // ── 내 위치 마커 ──────────────────────────────
-    function updateUserMarker(lat, lng, accuracy) {
+    function updateUserMarker(rawLat, rawLng, accuracy) {
+      const { lat, lng } = _smoothPos(rawLat, rawLng, accuracy);
+
       if (!userMarker) {
         userMarker = L.marker([lat, lng], {
           icon: makeUserIcon(compassHeading), zIndexOffset: 1000
         }).addTo(map);
         userCircle = L.circle([lat, lng], {
-          radius: accuracy,
-          color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.08, weight: 1
+          radius: Math.min(accuracy, 80),
+          color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.10, weight: 1
         }).addTo(map);
         map.setView([lat, lng], map.getZoom());
       } else {
         userMarker.setLatLng([lat, lng]);
         userCircle.setLatLng([lat, lng]);
-        userCircle.setRadius(accuracy);
+        userCircle.setRadius(Math.min(accuracy, 80));
       }
       if (followMode) {
-        map.panTo([lat, lng], { animate: true, duration: 0.5 });
+        // 애니메이션 0.15s → GPS 업데이트 주기보다 짧아서 끊김 없음
+        map.panTo([lat, lng], { animate: true, duration: 0.15, easeLinearity: 1 });
       }
     }
 
@@ -399,6 +413,10 @@
       navigator.geolocation.watchPosition(
         (pos) => {
           const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+
+          // 정확도 150m 초과는 무시 (실내 Wi-Fi 위치 등 너무 부정확한 값)
+          if (accuracy > 150) return;
+
           currentLocation = { lat, lng };
 
           updateUserMarker(lat, lng, accuracy);
@@ -434,7 +452,7 @@
           setGPSStatus('bad', 'GPS 오류');
           console.warn('GPS error:', err);
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
       );
     }
 
