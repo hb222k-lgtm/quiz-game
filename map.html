@@ -441,8 +441,10 @@
 
     // ── 날짜 공개 여부 확인 ──────────────────────
     function isLocationActive(loc) {
-      if (!loc.startDate) return true;
-      return new Date(loc.startDate) <= new Date();
+      const now = new Date();
+      if (loc.startDate && new Date(loc.startDate) > now) return false; // 아직 공개 전
+      if (loc.endDate   && new Date(loc.endDate)   < now) return false; // 이미 종료
+      return true;
     }
 
     // ── 장소 목록 로드 ────────────────────────────

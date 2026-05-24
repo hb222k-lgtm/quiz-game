@@ -198,8 +198,12 @@
     </div>
 
     <div class="fg">
-      <label>공개 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(비워두면 즉시 공개)</span></label>
+      <label>📅 공개 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(비워두면 즉시 공개)</span></label>
       <input type="datetime-local" id="loc-startdate">
+    </div>
+    <div class="fg">
+      <label>🏁 종료 날짜·시간 <span style="color:#94a3b8; font-weight:400;">(비워두면 종료 없이 계속)</span></label>
+      <input type="datetime-local" id="loc-enddate">
     </div>
 
     <!-- 고정 문제 섹션 -->
@@ -507,6 +511,7 @@
     document.getElementById('loc-name').value   = loc.name || '';
     document.getElementById('loc-points').value = loc.quiz?.points || 100;
     document.getElementById('loc-startdate').value = loc.startDate || '';
+    document.getElementById('loc-enddate').value   = loc.endDate   || '';
 
     const mode = loc.quizMode || 'fixed';
     document.querySelector(`input[name="qmode"][value="${mode}"]`).checked = true;
@@ -561,7 +566,11 @@
     const mode = document.querySelector('input[name="qmode"]:checked').value;
     const points = parseInt(document.getElementById('loc-points').value) || 100;
     const startDate = document.getElementById('loc-startdate').value || '';
+    const endDate   = document.getElementById('loc-enddate').value   || '';
 
+    if (startDate && endDate && new Date(startDate) >= new Date(endDate)) {
+      alert('종료 날짜가 공개 날짜보다 빨라요'); return;
+    }
     if (!name) { alert('장소 이름을 입력해주세요'); document.getElementById('loc-name').focus(); return; }
     if (isNaN(lat) || isNaN(lng)) { alert('지도를 클릭해 위치를 선택해주세요'); switchTab('form'); return; }
 
@@ -576,7 +585,8 @@
     }
 
     const data = {
-      name, lat, lng, enabled: true, startDate,
+      name, lat, lng, enabled: true,
+      startDate, endDate,
       quizMode: mode,
       quiz: quiz || { points },
     };
