@@ -36,7 +36,7 @@
 
     /* GPS 버튼 */
     #gps-btn {
-      position: absolute; bottom: 14px; right: 14px; z-index: 500;
+      position: absolute; bottom: 80px; right: 14px; z-index: 500;
       width: 48px; height: 48px; border-radius: 50%;
       background: #fff; border: 2px solid #e2e8f0;
       box-shadow: 0 2px 10px rgba(0,0,0,0.18);
@@ -438,7 +438,8 @@
     const center = (lat && lng) ? [lat, lng] : (GAME_CONFIG.MAP_CENTER || [37.5665, 126.9780]);
     const zoom   = (lat && lng) ? 17 : (GAME_CONFIG.MAP_ZOOM || 15);
 
-    map = L.map('map').setView(center, zoom);
+    map = L.map('map', { zoomControl: false }).setView(center, zoom);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 19, attribution: '© OpenStreetMap © CARTO'
     }).addTo(map);
