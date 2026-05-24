@@ -41,5 +41,15 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read, write: if true;
     }
+
+    // 공지사항 (읽기/쓰기 허용)
+    match /announcements/{announcementId} {
+      allow read, write: if true;
+    }
+
+    // 설정 (보너스 구간, 게임 기간 등)
+    match /config/{configId} {
+      allow read, write: if true;
+    }
   }
 }
