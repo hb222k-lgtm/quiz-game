@@ -47,6 +47,45 @@
     #gps-btn.tracking { background: #ede9fe; border-color: #7c3aed; }
     #gps-btn.loading  { opacity: 0.55; }
 
+    /* 검색 바 */
+    #search-bar {
+      position: absolute; top: 10px; left: 10px; right: 66px; z-index: 500;
+    }
+    #search-input-wrap {
+      display: flex; align-items: center;
+      background: #fff; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+      border: 1.5px solid #e2e8f0;
+      overflow: hidden;
+    }
+    #search-input-wrap input {
+      flex: 1; border: none; outline: none;
+      padding: 10px 12px; font-size: 14px;
+      background: transparent;
+    }
+    #search-input-wrap button {
+      background: none; border: none; padding: 10px 12px;
+      font-size: 18px; cursor: pointer; color: #7c3aed;
+      flex-shrink: 0;
+    }
+    #search-results {
+      display: none;
+      background: #fff; border-radius: 12px; margin-top: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      border: 1.5px solid #e2e8f0;
+      max-height: 220px; overflow-y: auto;
+    }
+    .search-result-item {
+      padding: 10px 14px; font-size: 13px; cursor: pointer;
+      border-bottom: 1px solid #f1f5f9; display: flex; gap: 8px; align-items: flex-start;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:active, .search-result-item:hover { background: #faf5ff; }
+    .search-result-item .sr-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .search-result-item .sr-name { font-weight: 700; color: #1e0a38; }
+    .search-result-item .sr-addr { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+    #search-loading { display:none; padding: 12px 14px; font-size:13px; color:#94a3b8; }
+
     /* 위치 힌트 (지도 위 오버레이) */
     #map-hint {
       position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
@@ -216,6 +255,19 @@
 <!-- 지도 -->
 <div id="map-wrapper">
   <div id="map"></div>
+
+  <!-- 검색 바 (지도 위) -->
+  <div id="search-bar">
+    <div id="search-input-wrap">
+      <input type="text" id="search-input" placeholder="건물·지명 검색 (예: 체육관, 공원...)"
+        autocomplete="off" autocorrect="off" spellcheck="false">
+      <button onclick="doSearch()" title="검색">🔍</button>
+      <button onclick="clearSearch()" id="search-clear-btn" style="display:none; color:#94a3b8;">✕</button>
+    </div>
+    <div id="search-loading">🔍 검색 중...</div>
+    <div id="search-results"></div>
+  </div>
+
   <button id="gps-btn" onclick="setCurrentLocation()" title="내 위치로 이동">📍</button>
 </div>
 
@@ -669,6 +721,100 @@
     document.getElementById('tab-list-btn').className = 'panel-tab' + (tab === 'list' ? ' active' : '');
     if (map) map.invalidateSize();
   }
+
+  // ── 장소 검색 (Nominatim) ────────────────────────
+  let _searchTimer = null;
+
+  document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+  });
+  document.getElementById('search-input').addEventListener('input', () => {
+    const v = document.getElementById('search-input').value.trim();
+    document.getElementById('search-clear-btn').style.display = v ? 'block' : 'none';
+    document.getElementById('search-results').style.display = 'none';
+    clearTimeout(_searchTimer);
+    if (v.length >= 2) _searchTimer = setTimeout(doSearch, 600);
+  });
+
+  async function doSearch() {
+    const q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+    document.getElementById('search-results').style.display = 'none';
+    document.getElementById('search-loading').style.display = 'block';
+    clearTimeout(_searchTimer);
+
+    // 지도 현재 중심을 힌트로 활용 (한국 우선)
+    const center = map ? map.getCenter() : null;
+    const viewbox = center
+      ? `&viewbox=${center.lng-0.5},${center.lat+0.5},${center.lng+0.5},${center.lat-0.5}&bounded=0`
+      : '';
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&accept-language=ko&countrycodes=kr${viewbox}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
+      const data = await res.json();
+      renderSearchResults(data);
+    } catch(e) {
+      document.getElementById('search-loading').style.display = 'none';
+      showToast('검색 오류: 네트워크를 확인해주세요');
+    }
+  }
+
+  function renderSearchResults(results) {
+    document.getElementById('search-loading').style.display = 'none';
+    const el = document.getElementById('search-results');
+    if (!results.length) {
+      el.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:#94a3b8;">검색 결과가 없어요</div>';
+      el.style.display = 'block';
+      return;
+    }
+
+    const typeIcon = t => {
+      if (!t) return '📍';
+      if (/building|house|school|church|hospital/.test(t)) return '🏢';
+      if (/park|garden|forest/.test(t)) return '🌳';
+      if (/road|street|path/.test(t)) return '🛣️';
+      if (/water|river|lake/.test(t)) return '🌊';
+      return '📍';
+    };
+
+    el.innerHTML = results.map((r, i) => {
+      const name = r.name || r.display_name.split(',')[0];
+      const addr = r.display_name.replace(name + ', ', '').split(',').slice(0, 2).join(', ');
+      return `<div class="search-result-item" onclick="selectSearchResult(${r.lat}, ${r.lon}, '${escHtml(name)}')">
+        <span class="sr-icon">${typeIcon(r.type)}</span>
+        <div><div class="sr-name">${escHtml(name)}</div><div class="sr-addr">${escHtml(addr)}</div></div>
+      </div>`;
+    }).join('');
+    el.style.display = 'block';
+  }
+
+  function selectSearchResult(lat, lng, name) {
+    lat = parseFloat(lat); lng = parseFloat(lng);
+    // 검색 UI 닫기
+    document.getElementById('search-results').style.display = 'none';
+    document.getElementById('search-input').value = name;
+    // 지도 이동
+    map.flyTo([lat, lng], 17, { duration: 0.8 });
+    // 단독 모드면 핀 자동 꽂기
+    if (!batchMode) placeMarker(lat, lng);
+    // GPS 따라가기 끄기
+    gpsFollow = false; updateGpsBtn();
+  }
+
+  function clearSearch() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').style.display = 'none';
+    document.getElementById('search-loading').style.display = 'none';
+    document.getElementById('search-clear-btn').style.display = 'none';
+  }
+
+  // 검색창 외부 클릭 시 결과 숨기기
+  document.addEventListener('click', e => {
+    if (!document.getElementById('search-bar').contains(e.target)) {
+      document.getElementById('search-results').style.display = 'none';
+    }
+  });
 
   // ── 저장 ─────────────────────────────────────────
   async function saveLocation() {
