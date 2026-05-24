@@ -457,7 +457,8 @@
             </div>
           </div>
           <div class="announce-popup-msg">${esc(a.message)}</div>
-          <button class="announce-popup-btn" style="background:${bg};" onclick="(document.querySelector('.announce-overlay')?.remove(), document.querySelector('.announce-popup')?.remove())">확인</button>`;
+          <button class="announce-popup-btn" style="background:${bg};">확인</button>`;
+        popup.querySelector('.announce-popup-btn').addEventListener('click', closePopup);
         document.body.appendChild(overlay);
         document.body.appendChild(popup);
       };

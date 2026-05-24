@@ -589,8 +589,10 @@
           </div>
         </div>
         <div class="announce-popup-msg">${escHtml(a.message)}</div>
-        <button class="announce-popup-btn" style="background:${bg};"
-          onclick="_closeAnnouncePopup()">확인</button>`;
+        <button class="announce-popup-btn" style="background:${bg};">확인</button>`;
+
+      // inline onclick 대신 addEventListener 사용 (스코프 문제 방지)
+      popup.querySelector('.announce-popup-btn').addEventListener('click', _closeAnnouncePopup);
 
       document.body.appendChild(overlay);
       document.body.appendChild(popup);
