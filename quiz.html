@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>퀴즈 - 탐험 퀴즈 게임</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
   <link rel="dns-prefetch" href="https://www.gstatic.com">
@@ -25,6 +27,26 @@
       width: 36px; height: 36px; border-radius: 50%; font-size: 18px;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       backdrop-filter: blur(4px);
+    }
+    @keyframes bannerSlideDown {
+      from { transform: translateY(-110%); }
+      to   { transform: translateY(0); }
+    }
+    .announce-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 14px 14px 14px 16px; color: #fff;
+      animation: bannerSlideDown 0.35s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.28);
+    }
+    .announce-banner .b-icon  { font-size: 24px; flex-shrink: 0; }
+    .announce-banner .b-body  { flex: 1; }
+    .announce-banner .b-title { font-size: 11px; font-weight: 700; opacity: 0.85; margin-bottom: 3px; }
+    .announce-banner .b-msg   { font-size: 14px; font-weight: 600; line-height: 1.4; }
+    .announce-banner .b-close {
+      background: rgba(255,255,255,0.25); border: none; color: #fff;
+      border-radius: 50%; width: 26px; height: 26px; font-size: 14px;
+      cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
     }
   </style>
 </head>
@@ -303,9 +325,11 @@
       const resultBox = document.getElementById('result-box');
       const backBtn = document.getElementById('back-btn');
 
+      // 즉시 전체 버튼 잠금 → 빠른 연타로 인한 중복 처리 방지
+      btns.forEach(b => b.disabled = true);
+
       if (selected === correct) {
         answered = true;
-        btns.forEach(b => b.disabled = true);
         btns[selected].classList.add('correct');
         resultBox.textContent = `🎉 정답! +${points}점 획득!`;
         resultBox.className = 'result-box show result-correct';
@@ -324,7 +348,8 @@
         btns[selected].disabled = true;
 
         if (attempts < 2) {
-          // 1번 틀림 → 한 번 더 기회
+          // 1번 틀림 → 한 번 더 기회 (선택한 것 빼고 다시 활성화)
+          btns.forEach((b, i) => { if (i !== selected) b.disabled = false; });
           resultBox.innerHTML = `😅 틀렸어요! 한 번 더 기회가 있어요.`;
           resultBox.className = 'result-box show result-wrong';
         } else {
@@ -346,7 +371,10 @@
     }
 
     // 정답/오답 확정 후 자동으로 지도 복귀 (2초 카운트다운)
+    let _redirectTimer = null;
+
     function autoRedirect(sec = 2) {
+      clearInterval(_redirectTimer); // 혹시 남아있는 타이머 정리
       const backBtn = document.getElementById('back-btn');
       const msg = document.getElementById('auto-redirect-msg');
       backBtn.style.display = 'block';
@@ -354,16 +382,19 @@
       msg.style.display = 'block';
       msg.textContent = `${sec}초 후 자동으로 돌아가요`;
 
-      const timer = setInterval(() => {
+      _redirectTimer = setInterval(() => {
         sec--;
         if (sec <= 0) {
-          clearInterval(timer);
+          clearInterval(_redirectTimer);
           window.location.href = 'map.html';
         } else {
           msg.textContent = `${sec}초 후 자동으로 돌아가요`;
         }
       }, 1000);
     }
+
+    // 수동으로 지도로 돌아가기 버튼 클릭 시 타이머 취소
+    document.getElementById('back-btn').addEventListener('click', () => clearInterval(_redirectTimer));
 
     // quiz_assignments 쓰기는 통계용이라 실패해도 무시 (재시도 1회)
     function safeIncrementAssignment(locId, questionId) {
@@ -382,6 +413,45 @@
     }
 
     init();
+
+    // ── 공지 수신 ─────────────────────────────────
+    (function() {
+      const since = new Date();
+      let lastId = null;
+      db.collection('announcements').orderBy('sentAt','desc').limit(1)
+        .onSnapshot(snap => {
+          if (snap.empty) return;
+          const doc = snap.docs[0];
+          if (doc.id === lastId) return;
+          const a = doc.data();
+          if (!a.sentAt || a.sentAt.toDate() < since) return; // pending 상태면 skip
+          lastId = doc.id; // sentAt 검증 후에 캐시
+          const BG   = { info:'#3b82f6', mission:'#7c3aed', urgent:'#ef4444' };
+          const ICON = { info:'📋', mission:'🎯', urgent:'🚨' };
+          const bg   = BG[a.type]   || '#3b82f6';
+          const icon = ICON[a.type] || '📢';
+          if (navigator.vibrate)
+            navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
+          if (!document.hasFocus() && Notification.permission === 'granted')
+            new Notification(`${icon} ${a.title||'공지'}`, { body: a.message, tag:'announce' });
+          const old = document.querySelector('.announce-banner');
+          if (old) old.remove();
+          const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          const b = document.createElement('div');
+          b.className = 'announce-banner';
+          b.style.background = bg;
+          b.innerHTML = `<span class="b-icon">${icon}</span>
+            <div class="b-body"><div class="b-title">${esc(a.title||'공지')}</div><div class="b-msg">${esc(a.message)}</div></div>
+            <button class="b-close" onclick="this.closest('.announce-banner').remove()">✕</button>`;
+          document.body.appendChild(b);
+          setTimeout(() => b.remove(), a.type === 'urgent' ? 15000 : 8000);
+        });
+    })();
+
+    // Service Worker 등록 (PWA)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

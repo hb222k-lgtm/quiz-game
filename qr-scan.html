@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>QR 스캔 - 탐험 퀴즈 게임</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
   <link rel="preconnect" href="https://unpkg.com">
@@ -218,7 +220,7 @@
             const cur = pSnap.data()?.points || 0;
             const deduct = qrData.points || 0;
             const newPts = Math.max(0, cur - deduct);
-            tx.update(pRef, { points: newPts });
+            tx.update(pRef, { points: newPts, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             return { deducted: cur - newPts };
           });
@@ -233,7 +235,7 @@
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             const pSnap = await tx.get(pRef);
             const cur = pSnap.data()?.points || 0;
-            tx.update(pRef, { points: cur * 2 });
+            tx.update(pRef, { points: cur * 2, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             return { before: cur, after: cur * 2 };
           });
@@ -249,7 +251,7 @@
             const pSnap = await tx.get(pRef);
             const cur = pSnap.data()?.points || 0;
             const newPts = Math.floor(cur / 2);
-            tx.update(pRef, { points: newPts });
+            tx.update(pRef, { points: newPts, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             return { before: cur, after: newPts };
           });
@@ -258,9 +260,11 @@
         } else if (qrData.type === 'nothing') {
           // 💨 꽝!
           await db.runTransaction(async tx => {
+            const pRef = db.collection('participants').doc(nickname);
             const qRef = db.collection('qrcodes').doc(code);
             const qSnap = await tx.get(qRef);
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
+            tx.update(pRef, { scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
           showResult(false, `💨 꽝! 아무 일도 일어나지 않았어요 😅`, 'warning');
@@ -272,7 +276,7 @@
             const qRef = db.collection('qrcodes').doc(code);
             const qSnap = await tx.get(qRef);
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
-            tx.update(pRef, { points: firebase.firestore.FieldValue.increment(qrData.points) });
+            tx.update(pRef, { points: firebase.firestore.FieldValue.increment(qrData.points), scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
           showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${qrData.points}점 획득!`);
@@ -327,7 +331,8 @@
               throw new Error('ALREADY_USED');
             }
             tx.update(db.collection('participants').doc(nickname), {
-              points: firebase.firestore.FieldValue.increment(pts)
+              points: firebase.firestore.FieldValue.increment(pts),
+              scannedQRs: firebase.firestore.FieldValue.arrayUnion(qrData.id)
             });
             tx.update(qRef, {
               usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
@@ -363,17 +368,24 @@
           resultEl.className = 'qr-result show warning';
           resultEl.textContent = '😅 틀렸어요! 한 번 더 기회가 있어요.';
         } else {
-          // 2번 틀림 → 종료
+          // 2번 틀림 → 종료 (트랜잭션으로 usedBy 중복 방지)
           quizAnswered = true;
           btns.forEach(b => b.disabled = true);
           btns[quiz.correctIndex].classList.add('correct');
 
           try {
-            await db.collection('qrcodes').doc(qrData.id).update({
-              usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
+            const qRef = db.collection('qrcodes').doc(qrData.id);
+            await db.runTransaction(async tx => {
+              const qSnap = await tx.get(qRef);
+              if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
+              tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             });
           } catch (e) {
-            console.error('QR usedBy update error:', e);
+            if (e.message === 'ALREADY_USED') {
+              console.log('이미 처리된 QR (오답 종료)');
+            } else {
+              console.error('QR usedBy update error:', e);
+            }
           }
           const correctText = quiz.options?.[quiz.correctIndex] || '';
           showResult(false, `😢 아쉬워요! 정답: ${correctText}`);
@@ -416,6 +428,11 @@
 
     // 시작
     tryURLCode();
+
+    // Service Worker 등록 (PWA)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

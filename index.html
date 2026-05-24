@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>탐험 퀴즈 게임</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
   <link rel="dns-prefetch" href="https://www.gstatic.com">
@@ -30,6 +32,59 @@
     }
     .chip span { font-size: 20px; }
     #saved-name { font-weight: 900; font-size: 22px; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+    /* ── PWA 설치 배너 ── */
+    #pwa-banner {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+      background: #fff;
+      border-top: 2px solid #ddd6fe;
+      box-shadow: 0 -4px 24px rgba(124,58,237,0.15);
+      padding: 16px 20px 24px;
+      animation: slideUp 0.3s ease;
+    }
+    #pwa-banner.show { display: block; }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    .pwa-banner-inner { display: flex; align-items: center; gap: 14px; }
+    .pwa-banner-icon { font-size: 38px; flex-shrink: 0; }
+    .pwa-banner-text { flex: 1; }
+    .pwa-banner-text strong { display: block; font-size: 15px; font-weight: 800; color: #1e0a38; }
+    .pwa-banner-text span   { font-size: 12px; color: #64748b; line-height: 1.5; }
+    .pwa-banner-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .pwa-btn-install {
+      flex: 1; padding: 12px;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .pwa-btn-dismiss {
+      padding: 12px 16px;
+      background: #f1f5f9; color: #64748b;
+      border: none; border-radius: 12px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+
+    /* iOS 안내 배너 */
+    #ios-banner {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+      background: #fff;
+      border-top: 2px solid #ddd6fe;
+      box-shadow: 0 -4px 24px rgba(124,58,237,0.15);
+      padding: 16px 20px 28px;
+      animation: slideUp 0.3s ease;
+    }
+    #ios-banner.show { display: block; }
+    .ios-banner-title { font-size: 15px; font-weight: 800; color: #1e0a38; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .ios-steps { font-size: 13px; color: #374151; line-height: 2; }
+    .ios-steps span { display: inline-block; background: #f3f0ff; border-radius: 6px; padding: 1px 7px; font-weight: 700; color: #7c3aed; }
+    .ios-banner-close {
+      position: absolute; top: 12px; right: 16px;
+      background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -41,12 +96,32 @@
     </div>
 
     <div class="card" id="login-card">
-      <div class="form-group">
-        <label for="name-input">닉네임</label>
-        <input type="text" id="name-input" placeholder="사용할 닉네임을 입력하세요"
-          maxlength="12" autocomplete="off" autocorrect="off">
+      <!-- Step 1: 닉네임 입력 -->
+      <div id="step-nickname">
+        <div class="form-group">
+          <label for="name-input">닉네임</label>
+          <input type="text" id="name-input" placeholder="사용할 닉네임을 입력하세요"
+            maxlength="12" autocomplete="off" autocorrect="off">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="checkNickname()">다음 →</button>
       </div>
-      <button class="btn btn-primary" onclick="startGame()">게임 시작 🚀</button>
+
+      <!-- Step 2: PIN 입력 (hidden) -->
+      <div id="step-pin" style="display:none;">
+        <div style="text-align:center; margin-bottom:16px;">
+          <div id="pin-avatar" style="font-size:40px; margin-bottom:8px;">🔐</div>
+          <div id="pin-title" style="font-size:17px; font-weight:800;"></div>
+          <div id="pin-desc"  style="font-size:13px; color:#64748b; margin-top:4px;"></div>
+        </div>
+        <div class="form-group">
+          <label>비밀번호</label>
+          <input type="password" id="pin-input" placeholder="숫자 4자리"
+            maxlength="8" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="enterWithPin()">입장 🚀</button>
+        <button class="btn btn-outline mt-8" style="width:100%; font-size:13px;"
+          onclick="backToNickname()">← 닉네임 다시 입력</button>
+      </div>
     </div>
 
     <div class="card" id="continue-card" style="display:none; text-align:center;">
@@ -60,6 +135,32 @@
       <div class="chip"><span>📍</span> 장소에 직접 방문해야 퀴즈가 열려요</div>
       <div class="chip"><span>📱</span> QR 코드 스캔으로도 포인트 획득!</div>
       <div class="chip"><span>🏆</span> 포인트 1등이 최후의 승자!</div>
+    </div>
+  </div>
+
+  <!-- Android 설치 배너 -->
+  <div id="pwa-banner">
+    <div class="pwa-banner-inner">
+      <div class="pwa-banner-icon">🗺️</div>
+      <div class="pwa-banner-text">
+        <strong>홈 화면에 추가하기</strong>
+        <span>앱처럼 바로가기를 만들면<br>더 빠르게 게임을 시작할 수 있어요!</span>
+      </div>
+    </div>
+    <div class="pwa-banner-actions">
+      <button class="pwa-btn-install" id="pwa-install-btn">📲 홈 화면에 추가</button>
+      <button class="pwa-btn-dismiss" id="pwa-dismiss-btn">나중에</button>
+    </div>
+  </div>
+
+  <!-- iOS 설치 안내 배너 -->
+  <div id="ios-banner">
+    <button class="ios-banner-close" id="ios-close-btn">✕</button>
+    <div class="ios-banner-title">🗺️ 홈 화면에 추가하기</div>
+    <div class="ios-steps">
+      1. 하단의 <span>공유 버튼 □↑</span> 탭<br>
+      2. <span>홈 화면에 추가</span> 선택<br>
+      3. 오른쪽 위 <span>추가</span> 탭!
     </div>
   </div>
 
@@ -84,47 +185,152 @@
       window.location.href = 'map.html';
     }
 
-    async function startGame() {
+    let _isExistingUser = false;
+
+    async function checkNickname() {
       const input = document.getElementById('name-input');
       const name = input.value.trim();
       if (!name) { showToast('닉네임을 입력해주세요'); return; }
       if (name.length < 2) { showToast('닉네임은 2자 이상이어야 해요'); return; }
 
-      const btn = document.querySelector('.btn-primary');
-      btn.textContent = '확인 중...';
-      btn.disabled = true;
+      const btn = document.querySelector('#step-nickname .btn-primary');
+      btn.textContent = '확인 중...'; btn.disabled = true;
 
       try {
-        // 닉네임 중복 체크
         const snap = await db.collection('participants').doc(name).get();
-        if (snap.exists) {
-          // 기존 참가자 → 이어서
-          setNickname(name);
-          window.location.href = 'map.html';
-          return;
+        _isExistingUser = snap.exists && !!(snap.data()?.pin);
+
+        document.getElementById('step-nickname').style.display = 'none';
+        document.getElementById('step-pin').style.display = 'block';
+
+        if (_isExistingUser) {
+          document.getElementById('pin-avatar').textContent = '👋';
+          document.getElementById('pin-title').textContent = `반가워요, ${name}!`;
+          document.getElementById('pin-desc').textContent = '내 비밀번호를 입력해주세요';
+        } else {
+          document.getElementById('pin-avatar').textContent = '🔐';
+          document.getElementById('pin-title').textContent = '비밀번호 만들기';
+          document.getElementById('pin-desc').textContent = '숫자 4자리로 만들어요. 기억해두세요!';
         }
+        document.getElementById('pin-input').focus();
+      } catch (e) {
+        showToast('오류가 발생했어요. 다시 시도해주세요.');
+      }
+      btn.textContent = '다음 →'; btn.disabled = false;
+    }
 
-        // 신규 참가자 등록
-        await db.collection('participants').doc(name).set({
-          nickname: name,
-          points: 0,
-          completedLocations: [],
-          scannedQRs: [],
-          joinedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+    async function enterWithPin() {
+      const name = document.getElementById('name-input').value.trim();
+      const pin  = document.getElementById('pin-input').value.trim();
+      if (!pin || pin.length < 4) { showToast('비밀번호는 4자리 이상이에요'); return; }
 
+      const btn = document.querySelector('#step-pin .btn-primary');
+      btn.textContent = '입장 중...'; btn.disabled = true;
+
+      try {
+        if (_isExistingUser) {
+          // 기존 참가자 → PIN 검증
+          const snap = await db.collection('participants').doc(name).get();
+          if (!snap.exists || snap.data()?.pin !== pin) {
+            showToast('비밀번호가 맞지 않아요 🔒');
+            document.getElementById('pin-input').value = '';
+            document.getElementById('pin-input').focus();
+            btn.textContent = '입장 🚀'; btn.disabled = false;
+            return;
+          }
+        } else {
+          // 신규 참가자 → 등록 (race condition 방지)
+          const snap = await db.collection('participants').doc(name).get();
+          if (snap.exists && snap.data()?.pin) {
+            showToast('이미 사용 중인 닉네임이에요 😅');
+            backToNickname(); return;
+          }
+          await db.collection('participants').doc(name).set({
+            nickname: name, pin,
+            points: 0, completedLocations: [], scannedQRs: [],
+            joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
         setNickname(name);
         window.location.href = 'map.html';
       } catch (e) {
         showToast('오류가 발생했어요. 다시 시도해주세요.');
-        btn.textContent = '게임 시작 🚀';
-        btn.disabled = false;
+        btn.textContent = '입장 🚀'; btn.disabled = false;
       }
     }
 
+    function backToNickname() {
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-nickname').style.display = 'block';
+      document.getElementById('pin-input').value = '';
+    }
+
     document.getElementById('name-input').addEventListener('keydown', e => {
-      if (e.key === 'Enter') startGame();
+      if (e.key === 'Enter') checkNickname();
     });
+
+    // pin-input에서 Enter 키
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && document.getElementById('step-pin').style.display !== 'none') {
+        enterWithPin();
+      }
+    });
+
+    // ── PWA 설치 프롬프트 ───────────────────────────────────────
+    (function initPWA() {
+      // 이미 standalone(앱)으로 실행 중이면 배너 불필요
+      if (window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true) return;
+
+      // 30일 이내에 이미 dismissal한 경우 건너뜀
+      const dismissed = localStorage.getItem('pwa_dismissed');
+      if (dismissed && Date.now() - Number(dismissed) < 30 * 24 * 60 * 60 * 1000) return;
+
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+      const isAndroid = /android/i.test(navigator.userAgent);
+
+      // Service Worker 등록
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
+
+      // ── Android: beforeinstallprompt 이벤트 ──
+      let _deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        _deferredPrompt = e;
+        document.getElementById('pwa-banner').classList.add('show');
+      });
+
+      document.getElementById('pwa-install-btn').addEventListener('click', () => {
+        if (!_deferredPrompt) return;
+        _deferredPrompt.prompt();
+        _deferredPrompt.userChoice.then(choice => {
+          _deferredPrompt = null;
+          document.getElementById('pwa-banner').classList.remove('show');
+          if (choice.outcome === 'accepted') localStorage.setItem('pwa_dismissed', Date.now());
+        });
+      });
+
+      document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+        document.getElementById('pwa-banner').classList.remove('show');
+        localStorage.setItem('pwa_dismissed', Date.now());
+      });
+
+      // ── iOS Safari: 수동 안내 배너 ──
+      if (isIOS) {
+        // Safari에서만 표시 (Chrome on iOS는 제외)
+        const isSafari = /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent) && !/crios/i.test(navigator.userAgent);
+        if (isSafari) {
+          setTimeout(() => document.getElementById('ios-banner').classList.add('show'), 1500);
+        }
+      }
+
+      document.getElementById('ios-close-btn').addEventListener('click', () => {
+        document.getElementById('ios-banner').classList.remove('show');
+        localStorage.setItem('pwa_dismissed', Date.now());
+      });
+    })();
   </script>
 </body>
 </html>

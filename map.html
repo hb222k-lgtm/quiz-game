@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>지도 - 탐험 퀴즈 게임</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
   <link rel="preconnect" href="https://unpkg.com">
@@ -67,6 +69,28 @@
       background: rgba(59,130,246,0.12);
       border: 1.5px solid rgba(59,130,246,0.3);
       pointer-events: none;
+    }
+
+    /* 공지 배너 */
+    @keyframes bannerSlideDown {
+      from { transform: translateY(-110%); }
+      to   { transform: translateY(0); }
+    }
+    .announce-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 14px 14px 14px 16px;
+      color: #fff; animation: bannerSlideDown 0.35s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.28);
+    }
+    .announce-banner .banner-icon { font-size: 24px; flex-shrink: 0; }
+    .announce-banner .banner-body { flex: 1; }
+    .announce-banner .banner-title { font-size: 11px; font-weight: 700; opacity: 0.85; margin-bottom: 3px; }
+    .announce-banner .banner-msg   { font-size: 14px; font-weight: 600; line-height: 1.4; }
+    .announce-banner .banner-close {
+      background: rgba(255,255,255,0.25); border: none; color: #fff;
+      border-radius: 50%; width: 26px; height: 26px; font-size: 14px;
+      cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
     }
   </style>
 </head>
@@ -140,6 +164,8 @@
     let currentLocation = null;
     let activePopupLocationId = null;
     let followMode = true; // 내 위치 따라가기 켜짐
+    const dismissedPopups = new Set(); // 사용자가 직접 닫은 팝업 (GPS 재진입까지 재표시 안 함)
+    let _bonusMilestones = [];
 
     // ── 마커 아이콘 ──────────────────────────────
     function makeIcon(emoji, size = 36) {
@@ -342,6 +368,7 @@
 
     // 지도 빈 곳 클릭 시 팝업 닫기
     function closePopupOnMapClick() {
+      if (activePopupLocationId) dismissedPopups.add(activePopupLocationId);
       document.getElementById('location-popup').classList.remove('visible');
       activePopupLocationId = null;
     }
@@ -369,10 +396,15 @@
           locations.forEach(loc => {
             if (!loc.enabled) return;
             const dist = getDistance(lat, lng, loc.lat, loc.lng);
-            if (dist <= GAME_CONFIG.LOCATION_RADIUS && !(participant.completedLocations || []).includes(loc.id)) {
-              if (activePopupLocationId !== loc.id) {
+            if (dist <= GAME_CONFIG.LOCATION_RADIUS) {
+              if (!(participant.completedLocations || []).includes(loc.id)
+                  && activePopupLocationId !== loc.id
+                  && !dismissedPopups.has(loc.id)) {
                 showLocationPopup(loc);
               }
+            } else {
+              // 범위 벗어나면 dismissed 초기화 → 다시 들어올 때 재표시
+              dismissedPopups.delete(loc.id);
             }
           });
 
@@ -400,6 +432,8 @@
         document.getElementById('header-name').textContent = nickname;
         document.getElementById('header-progress').textContent =
           `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
+        // 보너스 구간 확인
+        checkBonusMilestones(participant.points || 0, participant.claimedMilestones);
         // 마커 갱신
         locations.forEach(loc => renderLocationMarker(loc));
       });
@@ -440,6 +474,98 @@
       locations.forEach(loc => renderLocationMarker(loc));
     }
 
+    // ── 보너스 구간 ──────────────────────────────────
+    async function loadMilestones() {
+      try {
+        const snap = await db.collection('config').doc('bonusMilestones').get();
+        _bonusMilestones = snap.data()?.milestones || [];
+      } catch (e) {}
+    }
+
+    async function checkBonusMilestones(pts, claimed) {
+      if (!_bonusMilestones.length) return;
+      const claimedSet = new Set(claimed || []);
+      for (const m of _bonusMilestones) {
+        const key = `ms_${m.threshold}`;
+        if (pts >= m.threshold && !claimedSet.has(key)) {
+          try {
+            await db.collection('participants').doc(nickname).update({
+              points: firebase.firestore.FieldValue.increment(m.bonus),
+              claimedMilestones: firebase.firestore.FieldValue.arrayUnion(key)
+            });
+            showToast(`🎁 ${m.threshold}점 달성! 보너스 +${m.bonus}점 지급!`);
+          } catch (e) {}
+        }
+      }
+    }
+
+    // ── 공지 수신 ─────────────────────────────────
+    let _lastAnnounceId = null;
+
+    function requestNotifPermission() {
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+
+    function listenAnnouncements() {
+      const since = new Date();
+      db.collection('announcements')
+        .orderBy('sentAt', 'desc').limit(1)
+        .onSnapshot(snap => {
+          if (snap.empty) return;
+          const doc = snap.docs[0];
+          if (doc.id === _lastAnnounceId) return;
+          const a = doc.data();
+          // sentAt이 null이면 아직 서버 타임스탬프 처리 중 → id 캐시하지 말고 skip
+          if (!a.sentAt || a.sentAt.toDate() < since) return;
+          _lastAnnounceId = doc.id; // sentAt 검증 후에 캐시
+          showAnnounceBanner(a);
+        });
+    }
+
+    function showAnnounceBanner(a) {
+      const BG   = { info:'#3b82f6', mission:'#7c3aed', urgent:'#ef4444' };
+      const ICON = { info:'📋', mission:'🎯', urgent:'🚨' };
+      const bg   = BG[a.type]   || '#3b82f6';
+      const icon = ICON[a.type] || '📢';
+
+      // 진동 (긴급은 세 번)
+      if (navigator.vibrate)
+        navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
+
+      // 백그라운드 탭이면 OS 알림
+      if (!document.hasFocus() && Notification.permission === 'granted') {
+        new Notification(`${icon} ${a.title || '공지'}`, {
+          body: a.message, tag: 'announce',
+          icon: 'icon.png'
+        });
+      }
+
+      // 인앱 배너
+      const old = document.querySelector('.announce-banner');
+      if (old) old.remove();
+
+      const banner = document.createElement('div');
+      banner.className = 'announce-banner';
+      banner.style.background = bg;
+      banner.innerHTML = `
+        <span class="banner-icon">${icon}</span>
+        <div class="banner-body">
+          <div class="banner-title">${escHtml(a.title || '공지')}</div>
+          <div class="banner-msg">${escHtml(a.message)}</div>
+        </div>
+        <button class="banner-close" onclick="this.closest('.announce-banner').remove()">✕</button>`;
+      document.body.appendChild(banner);
+
+      // 자동 닫기 (긴급 15초, 나머지 8초)
+      setTimeout(() => banner.remove(), a.type === 'urgent' ? 15000 : 8000);
+    }
+
+    function escHtml(s) {
+      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
     // ── 초기화 ────────────────────────────────────
     document.getElementById('header-name').textContent = nickname;
 
@@ -456,8 +582,11 @@
       });
       startGPS();
       startCompass();
-      loadLocations();
-      listenParticipant();
+      // loadLocations 먼저 완료 후 listenParticipant → 진행도 "N/0곳" 표시 방지
+      loadLocations().then(() => listenParticipant());
+      loadMilestones();
+      requestNotifPermission();
+      listenAnnouncements();
     }
 
     // Leaflet 로드 확인 후 시작 (CDN 실패 시 unpkg로 재시도)
@@ -482,6 +611,11 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshParticipant();
     });
+
+    // Service Worker 등록 (PWA)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

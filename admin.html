@@ -7,6 +7,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>관리자 - 탐험 퀴즈 게임</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com">
   <link rel="preconnect" href="https://firestore.googleapis.com">
   <link rel="preconnect" href="https://unpkg.com">
@@ -41,6 +43,18 @@
     .qr-type-btn:hover { border-color: #a78bfa; color: #4c1d95; background: #faf5ff; }
     .qr-type-btn.active { border-color: #7c3aed; background: #faf5ff; color: #6d28d9; }
     .qr-type-btn span { font-size: 11px; }
+
+    /* 공지 */
+    .announce-type-btn {
+      flex: 1; padding: 8px 4px; border: 2px solid #e2e8f0; border-radius: 10px;
+      background: #fff; font-size: 13px; font-weight: 700; cursor: pointer; color: #64748b;
+      transition: all 0.15s; text-align: center;
+    }
+    .announce-type-btn.active[data-type="info"]    { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+    .announce-type-btn.active[data-type="mission"] { border-color:#7c3aed; background:#faf5ff; color:#6d28d9; }
+    .announce-type-btn.active[data-type="urgent"]  { border-color:#ef4444; background:#fef2f2; color:#b91c1c; }
+    .announce-recent { font-size:13px; padding:9px 0; border-bottom:1px solid #f1f5f9; display:flex; gap:8px; align-items:flex-start; }
+    .announce-recent:last-child { border-bottom:none; }
   </style>
 </head>
 <body>
@@ -77,6 +91,7 @@
     <button class="tab-btn" onclick="switchTab('qrcodes', this)">📷 QR코드</button>
     <button class="tab-btn" onclick="switchTab('shop', this)">🛒 상점</button>
     <button class="tab-btn" onclick="switchTab('settings', this)">⚙️ 설정</button>
+    <button class="tab-btn" onclick="switchTab('announce', this)">📢 공지</button>
   </div>
 
   <div style="flex:1; overflow-y:auto;">
@@ -148,9 +163,37 @@
       <div id="shop-items-list"></div>
     </div>
 
+    <!-- ── 공지 탭 ── -->
+    <div class="tab-panel" id="tab-announce">
+      <div class="card">
+        <h3 style="font-weight:700; margin-bottom:4px;">📢 미션 공지 보내기</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">게임 화면이 열린 참가자에게 즉시 전달돼요</p>
+
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <button class="announce-type-btn active" data-type="info"    onclick="selectAnnounceType(this,'info')">📋 일반</button>
+          <button class="announce-type-btn"         data-type="mission" onclick="selectAnnounceType(this,'mission')">🎯 미션</button>
+          <button class="announce-type-btn"         data-type="urgent"  onclick="selectAnnounceType(this,'urgent')">🚨 긴급</button>
+        </div>
+
+        <textarea id="announce-message-inline" rows="4"
+          placeholder="예: 3구역 미션이 시작됐어요! 지도에서 확인하세요 🗺️"
+          style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px;
+                 font-size:14px; resize:none; outline:none; box-sizing:border-box; font-family:inherit; margin-bottom:10px;"
+          onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'"></textarea>
+
+        <button class="btn btn-primary" style="width:100%; margin-bottom:16px;" onclick="sendAnnouncementInline()">📢 전송하기</button>
+
+        <h4 style="font-size:13px; font-weight:700; color:#64748b; margin-bottom:8px;">최근 보낸 공지</h4>
+        <div id="recent-announcements-inline">
+          <p style="font-size:13px; color:#94a3b8;">아직 없어요</p>
+        </div>
+      </div>
+    </div>
+
     <!-- ── 설정 탭 ── -->
     <div class="tab-panel" id="tab-settings">
-      <div class="card">
+
+      <div class="card mt-16">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <h3 style="font-weight:700;">참가자 관리</h3>
           <span id="participants-mgr-count" style="font-size:13px; color:#94a3b8;"></span>
@@ -165,6 +208,22 @@
         <button class="btn btn-danger" onclick="resetAll()">전체 초기화</button>
       </div>
 
+      <div class="card mt-16" id="bonus-milestone-card">
+        <h3 style="font-weight:700; margin-bottom:4px;">🎁 보너스 포인트 구간</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">특정 점수 달성 시 자동으로 보너스를 지급해요</p>
+        <div id="milestones-list">
+          <p style="font-size:13px; color:#94a3b8;">설정된 구간이 없어요</p>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
+          <input type="number" id="ms-threshold" placeholder="달성 점수" min="0"
+            style="flex:1; padding:9px 11px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; outline:none;">
+          <span style="font-size:18px;">→</span>
+          <input type="number" id="ms-bonus" placeholder="보너스 점수" min="1"
+            style="flex:1; padding:9px 11px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; outline:none;">
+          <button class="btn btn-primary" style="padding:9px 14px; white-space:nowrap;" onclick="addMilestone()">+ 추가</button>
+        </div>
+      </div>
+
       <div class="card mt-16" id="test-data-card">
         <h3 style="font-weight:700; margin-bottom:8px;">🧪 테스트 데이터</h3>
         <p class="text-muted mb-8" style="font-size:13px;">샘플 장소 3개와 QR 코드 2개를 추가해요. (테스트용)</p>
@@ -172,6 +231,34 @@
       </div>
     </div>
 
+  </div>
+
+</div>
+
+<!-- ── 공지 모달 ── -->
+<div class="modal-overlay" id="announce-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('announce-modal')">✕</button>
+    <h3>📢 미션 공지 보내기</h3>
+    <p style="font-size:13px; color:#64748b; margin-bottom:14px;">게임 화면이 열린 참가자에게 즉시 전달돼요</p>
+
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <button class="announce-type-btn active" data-type="info"    onclick="selectAnnounceType(this,'info')">📋 일반</button>
+      <button class="announce-type-btn"         data-type="mission" onclick="selectAnnounceType(this,'mission')">🎯 미션</button>
+      <button class="announce-type-btn"         data-type="urgent"  onclick="selectAnnounceType(this,'urgent')">🚨 긴급</button>
+    </div>
+
+    <div class="form-group">
+      <label>공지 내용</label>
+      <textarea id="announce-message" rows="4" placeholder="예: 3구역 미션이 시작됐어요! 지도에서 확인하세요 🗺️"
+        style="resize:none;"></textarea>
+    </div>
+    <button class="btn btn-primary" style="width:100%; margin-bottom:16px;" onclick="sendAnnouncement()">📢 전송하기</button>
+
+    <h4 style="font-size:13px; color:#64748b; margin-bottom:8px; font-weight:700;">최근 보낸 공지</h4>
+    <div id="recent-announcements">
+      <p style="font-size:13px; color:#94a3b8;">아직 없어요</p>
+    </div>
   </div>
 </div>
 
@@ -553,15 +640,45 @@ function switchTab(id, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + id).classList.add('active');
   btn.classList.add('active');
+  if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
 function initAdmin() {
+  loadMilestonesAdmin();
   listenLeaderboard();
   listenLocations();
   listenQuizBank();
   listenQRCodes();
   listenShopItems();
+}
+
+function injectAnnounceCard() {
+  const panel = document.getElementById('tab-settings');
+  if (!panel || document.getElementById('announce-card-inline')) return;
+
+  const card = document.createElement('div');
+  card.id = 'announce-card-inline';
+  card.className = 'card';
+  card.style.marginBottom = '16px';
+  card.innerHTML = `
+    <h3 style="font-weight:700; margin-bottom:4px;">📢 미션 공지 보내기</h3>
+    <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">게임 화면이 열린 참가자에게 즉시 전달돼요</p>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="announce-type-btn active" data-type="info"    onclick="selectAnnounceType(this,'info')">📋 일반</button>
+      <button class="announce-type-btn"         data-type="mission" onclick="selectAnnounceType(this,'mission')">🎯 미션</button>
+      <button class="announce-type-btn"         data-type="urgent"  onclick="selectAnnounceType(this,'urgent')">🚨 긴급</button>
+    </div>
+    <textarea id="announce-message-inline" rows="3"
+      placeholder="예: 3구역 미션 시작! 지도에서 확인하세요 🗺️"
+      style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px;
+             font-size:14px; resize:none; outline:none; box-sizing:border-box;
+             font-family:inherit; margin-bottom:10px; display:block;"
+      onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'"></textarea>
+    <button class="btn btn-primary" style="width:100%;" onclick="sendAnnouncementInline()">📢 전송하기</button>
+    <div id="recent-announcements-inline" style="margin-top:14px;"></div>
+  `;
+  panel.insertBefore(card, panel.firstChild);
 }
 
 // ── 리더보드 실시간 ───────────────────────────────
@@ -1595,6 +1712,139 @@ function qrBadgeHtml(qr) {
     case 'quiz':    return `<span class="badge" style="background:#ede9fe;color:#6d28d9;">❓ 퀴즈 +${qr.quizPoints||0}점</span>`;
     default:        return `<span class="badge badge-gold">💰 +${qr.points||0}점</span>`;
   }
+}
+
+// ── 보너스 구간 ──────────────────────────────────
+let _milestones = [];
+
+function loadMilestonesAdmin() {
+  db.collection('config').doc('bonusMilestones').onSnapshot(snap => {
+    _milestones = snap.data()?.milestones || [];
+    renderMilestonesAdmin();
+  });
+}
+
+function renderMilestonesAdmin() {
+  const el = document.getElementById('milestones-list');
+  if (!el) return;
+  if (!_milestones.length) {
+    el.innerHTML = '<p style="font-size:13px; color:#94a3b8;">설정된 구간이 없어요</p>';
+    return;
+  }
+  el.innerHTML = _milestones.map((m, i) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid #f1f5f9;">
+      <span style="flex:1; font-size:14px;">🏁 <b>${m.threshold}점</b> 달성 → <b style="color:#7c3aed;">+${m.bonus}점</b> 보너스</span>
+      <button onclick="deleteMilestone(${i})"
+        style="background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8; padding:4px;">🗑</button>
+    </div>`).join('');
+}
+
+async function addMilestone() {
+  const t = parseInt(document.getElementById('ms-threshold').value);
+  const b = parseInt(document.getElementById('ms-bonus').value);
+  if (!t || !b) { showToast('달성 점수와 보너스 점수를 입력해주세요'); return; }
+  const newList = [..._milestones, { threshold: t, bonus: b }]
+    .sort((a, b) => a.threshold - b.threshold);
+  await db.collection('config').doc('bonusMilestones').set({ milestones: newList });
+  document.getElementById('ms-threshold').value = '';
+  document.getElementById('ms-bonus').value = '';
+  showToast('보너스 구간 추가됐어요 🎁');
+}
+
+async function deleteMilestone(i) {
+  if (!confirm('이 보너스 구간을 삭제할까요?')) return;
+  const newList = _milestones.filter((_, idx) => idx !== i);
+  await db.collection('config').doc('bonusMilestones').set({ milestones: newList });
+  showToast('삭제됐어요');
+}
+
+// ── 공지 ─────────────────────────────────────────
+let _announceType = 'info';
+
+function selectAnnounceType(btn, type) {
+  document.querySelectorAll('.announce-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _announceType = type;
+}
+
+function openAnnounceModal() {
+  document.getElementById('announce-message').value = '';
+  // 종류 선택 초기화 (이전 선택 상태 리셋)
+  _announceType = 'info';
+  document.querySelectorAll('.announce-type-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.announce-type-btn[data-type="info"]').classList.add('active');
+  loadRecentAnnouncements();
+  document.getElementById('announce-modal').classList.add('visible');
+}
+
+// 설정 탭 인라인 전송
+async function sendAnnouncementInline() {
+  const message = document.getElementById('announce-message-inline').value.trim();
+  if (!message) { showToast('공지 내용을 입력해주세요'); return; }
+
+  const TITLES = { info: '📋 일반 공지', mission: '🎯 미션 공지', urgent: '🚨 긴급 공지' };
+  const btn = document.querySelector('#tab-settings .btn-primary');
+  btn.disabled = true; btn.textContent = '전송 중...';
+
+  try {
+    await db.collection('announcements').add({
+      message, type: _announceType,
+      title: TITLES[_announceType] || '공지',
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    showToast('공지를 보냈어요! 📢');
+    document.getElementById('announce-message-inline').value = '';
+    loadRecentAnnouncements('inline');
+  } catch (e) {
+    showToast('전송 실패: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '📢 전송하기';
+}
+
+async function sendAnnouncement() {
+  const message = document.getElementById('announce-message').value.trim();
+  if (!message) { showToast('공지 내용을 입력해주세요'); return; }
+
+  const TITLES = { info: '📋 일반 공지', mission: '🎯 미션 공지', urgent: '🚨 긴급 공지' };
+  const btn = document.querySelector('#announce-modal .btn-primary');
+  btn.disabled = true; btn.textContent = '전송 중...';
+
+  try {
+    await db.collection('announcements').add({
+      message,
+      type: _announceType,
+      title: TITLES[_announceType] || '공지',
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    showToast('공지를 보냈어요! 📢');
+    document.getElementById('announce-message').value = '';
+    loadRecentAnnouncements();
+  } catch (e) {
+    showToast('전송 실패: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '📢 전송하기';
+}
+
+async function loadRecentAnnouncements(target = 'modal') {
+  try {
+    const snap = await db.collection('announcements')
+      .orderBy('sentAt', 'desc').limit(6).get();
+    const elId = target === 'inline' ? 'recent-announcements-inline' : 'recent-announcements';
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (snap.empty) { el.innerHTML = '<p style="font-size:13px;color:#94a3b8;">아직 없어요</p>'; return; }
+    const COLORS = { info:'#3b82f6', mission:'#7c3aed', urgent:'#ef4444' };
+    el.innerHTML = snap.docs.map(d => {
+      const a = d.data();
+      const t = a.sentAt ? a.sentAt.toDate().toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}) : '';
+      const c = COLORS[a.type] || '#64748b';
+      return `<div class="announce-recent">
+        <span style="font-size:11px;color:${c};background:${c}22;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;">${escHtml(a.title||'공지')}</span>
+        <span style="flex:1;font-size:13px;line-height:1.4;">${escHtml(a.message)}</span>
+        <span style="font-size:11px;color:#94a3b8;flex-shrink:0;">${t}</span>
+      </div>`;
+    }).join('');
+  } catch (e) { /* orderBy 인덱스 없으면 무시 */ }
 }
 
 // ── 유틸 ─────────────────────────────────────────
