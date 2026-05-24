@@ -1877,8 +1877,8 @@ async function sendAnnouncementInline() {
   if (!message) { showToast('공지 내용을 입력해주세요'); return; }
 
   const TITLES = { info: '📋 일반 공지', mission: '🎯 미션 공지', urgent: '🚨 긴급 공지' };
-  const btn = document.querySelector('#tab-settings .btn-primary');
-  btn.disabled = true; btn.textContent = '전송 중...';
+  const btn = document.querySelector('#tab-announce .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '전송 중...'; }
 
   try {
     await db.collection('announcements').add({
@@ -1892,7 +1892,7 @@ async function sendAnnouncementInline() {
   } catch (e) {
     showToast('전송 실패: ' + e.message);
   }
-  btn.disabled = false; btn.textContent = '📢 전송하기';
+  if (btn) { btn.disabled = false; btn.textContent = '📢 전송하기'; }
 }
 
 async function sendAnnouncement() {
