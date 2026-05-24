@@ -1932,13 +1932,26 @@ async function loadRecentAnnouncements(target = 'modal') {
       const a = d.data();
       const t = a.sentAt ? a.sentAt.toDate().toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}) : '';
       const c = COLORS[a.type] || '#64748b';
-      return `<div class="announce-recent">
-        <span style="font-size:11px;color:${c};background:${c}22;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;">${escHtml(a.title||'공지')}</span>
-        <span style="flex:1;font-size:13px;line-height:1.4;">${escHtml(a.message)}</span>
-        <span style="font-size:11px;color:#94a3b8;flex-shrink:0;">${t}</span>
+      return `<div class="announce-recent" style="flex-wrap:wrap; gap:6px;">
+        <div style="display:flex;align-items:center;gap:6px;width:100%;">
+          <span style="font-size:11px;color:${c};background:${c}22;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;">${escHtml(a.title||'공지')}</span>
+          <span style="font-size:11px;color:#94a3b8;flex-shrink:0;">${t}</span>
+          <button onclick="deleteAnnouncement('${d.id}')"
+            style="margin-left:auto;background:none;border:none;font-size:16px;cursor:pointer;color:#cbd5e1;padding:0 2px;"
+            title="삭제">🗑</button>
+        </div>
+        <span style="font-size:13px;line-height:1.4;color:#374151;">${escHtml(a.message)}</span>
       </div>`;
     }).join('');
   } catch (e) { /* orderBy 인덱스 없으면 무시 */ }
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('이 공지를 삭제할까요?')) return;
+  await db.collection('announcements').doc(id).delete();
+  showToast('공지가 삭제됐어요');
+  loadRecentAnnouncements('inline');
+  loadRecentAnnouncements('modal');
 }
 
 // ── 유틸 ─────────────────────────────────────────

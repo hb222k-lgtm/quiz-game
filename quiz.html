@@ -28,26 +28,28 @@
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       backdrop-filter: blur(4px);
     }
-    @keyframes bannerSlideDown {
-      from { transform: translateY(-110%); }
-      to   { transform: translateY(0); }
+    @keyframes popupIn {
+      from { transform: translate(-50%,-50%) scale(0.85); opacity: 0; }
+      to   { transform: translate(-50%,-50%) scale(1);    opacity: 1; }
     }
-    .announce-banner {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-      display: flex; align-items: flex-start; gap: 10px;
-      padding: 14px 14px 14px 16px; color: #fff;
-      animation: bannerSlideDown 0.35s ease;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.28);
+    .announce-overlay {
+      position: fixed; inset: 0; z-index: 9998;
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
     }
-    .announce-banner .b-icon  { font-size: 24px; flex-shrink: 0; }
-    .announce-banner .b-body  { flex: 1; }
-    .announce-banner .b-title { font-size: 11px; font-weight: 700; opacity: 0.85; margin-bottom: 3px; }
-    .announce-banner .b-msg   { font-size: 14px; font-weight: 600; line-height: 1.4; }
-    .announce-banner .b-close {
-      background: rgba(255,255,255,0.25); border: none; color: #fff;
-      border-radius: 50%; width: 26px; height: 26px; font-size: 14px;
-      cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    .announce-popup {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      z-index: 9999; width: min(88vw, 360px);
+      background: #fff; border-radius: 20px; overflow: hidden;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.28);
+      animation: popupIn 0.28s ease;
     }
+    .announce-popup-head { padding: 20px 20px 14px; display: flex; align-items: center; gap: 10px; }
+    .announce-popup-icon { font-size: 28px; }
+    .announce-popup-title { font-size: 15px; font-weight: 800; }
+    .announce-popup-time  { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .announce-popup-msg { padding: 0 20px 20px; font-size: 15px; line-height: 1.65; color: #1e293b; white-space: pre-wrap; }
+    .announce-popup-btn { display: block; width: 100%; padding: 15px; border: none; font-size: 15px; font-weight: 800; color: #fff; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -414,8 +416,53 @@
 
     init();
 
-    // ── 공지 수신 ─────────────────────────────────
+    // ── 공지 팝업 공통 ────────────────────────────
     (function() {
+      const BG   = { info:'#3b82f6', mission:'#7c3aed', urgent:'#ef4444' };
+      const ICON = { info:'📋', mission:'🎯', urgent:'🚨' };
+      const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      function timeAgo(date) {
+        const d = Math.floor((Date.now() - date.getTime()) / 1000);
+        if (d < 60)   return '방금 전';
+        if (d < 3600) return `${Math.floor(d/60)}분 전`;
+        return `${Math.floor(d/3600)}시간 전`;
+      }
+
+      function closePopup() {
+        document.querySelector('.announce-overlay')?.remove();
+        document.querySelector('.announce-popup')?.remove();
+      }
+
+      window._showAnnouncePopup = function(a, timeLabel) {
+        const bg   = BG[a.type]  || '#3b82f6';
+        const icon = ICON[a.type] || '📢';
+        const time = timeLabel || (a.sentAt ? timeAgo(a.sentAt.toDate()) : '');
+        if (navigator.vibrate)
+          navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
+        if (!document.hasFocus() && Notification.permission === 'granted')
+          new Notification(`${icon} ${a.title||'공지'}`, { body: a.message, tag:'announce' });
+        closePopup();
+        const overlay = document.createElement('div');
+        overlay.className = 'announce-overlay';
+        overlay.addEventListener('click', closePopup);
+        const popup = document.createElement('div');
+        popup.className = 'announce-popup';
+        popup.innerHTML = `
+          <div class="announce-popup-head" style="border-bottom:3px solid ${bg};">
+            <span class="announce-popup-icon">${icon}</span>
+            <div>
+              <div class="announce-popup-title">${esc(a.title||'공지')}</div>
+              ${time ? `<div class="announce-popup-time">🕐 ${time}</div>` : ''}
+            </div>
+          </div>
+          <div class="announce-popup-msg">${esc(a.message)}</div>
+          <button class="announce-popup-btn" style="background:${bg};" onclick="(document.querySelector('.announce-overlay')?.remove(), document.querySelector('.announce-popup')?.remove())">확인</button>`;
+        document.body.appendChild(overlay);
+        document.body.appendChild(popup);
+      };
+
+      // 실시간 수신
       const since = new Date();
       let lastId = null;
       db.collection('announcements').orderBy('sentAt','desc').limit(1)
@@ -424,28 +471,29 @@
           const doc = snap.docs[0];
           if (doc.id === lastId) return;
           const a = doc.data();
-          if (!a.sentAt || a.sentAt.toDate() < since) return; // pending 상태면 skip
-          lastId = doc.id; // sentAt 검증 후에 캐시
-          const BG   = { info:'#3b82f6', mission:'#7c3aed', urgent:'#ef4444' };
-          const ICON = { info:'📋', mission:'🎯', urgent:'🚨' };
-          const bg   = BG[a.type]   || '#3b82f6';
-          const icon = ICON[a.type] || '📢';
-          if (navigator.vibrate)
-            navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
-          if (!document.hasFocus() && Notification.permission === 'granted')
-            new Notification(`${icon} ${a.title||'공지'}`, { body: a.message, tag:'announce' });
-          const old = document.querySelector('.announce-banner');
-          if (old) old.remove();
-          const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          const b = document.createElement('div');
-          b.className = 'announce-banner';
-          b.style.background = bg;
-          b.innerHTML = `<span class="b-icon">${icon}</span>
-            <div class="b-body"><div class="b-title">${esc(a.title||'공지')}</div><div class="b-msg">${esc(a.message)}</div></div>
-            <button class="b-close" onclick="this.closest('.announce-banner').remove()">✕</button>`;
-          document.body.appendChild(b);
-          setTimeout(() => b.remove(), a.type === 'urgent' ? 15000 : 8000);
+          if (!a.sentAt || a.sentAt.toDate() < since) return;
+          lastId = doc.id;
+          window._showAnnouncePopup(a);
         });
+
+      // 접속 시 최근 30분 공지 확인
+      (async () => {
+        try {
+          const snap = await db.collection('announcements')
+            .orderBy('sentAt','desc').limit(1).get();
+          if (snap.empty) return;
+          const doc = snap.docs[0];
+          const a = doc.data();
+          if (!a.sentAt) return;
+          const sentDate = a.sentAt.toDate();
+          if ((Date.now() - sentDate.getTime()) > 30 * 60000) return;
+          const readKey = 'read_announce_' + doc.id;
+          if (sessionStorage.getItem(readKey)) return;
+          lastId = doc.id;
+          window._showAnnouncePopup(a, timeAgo(sentDate));
+          sessionStorage.setItem(readKey, '1');
+        } catch(e) {}
+      })();
     })();
 
     // Service Worker 등록 (PWA)
