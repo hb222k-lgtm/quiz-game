@@ -333,11 +333,14 @@
       if (selected === correct) {
         answered = true;
         btns[selected].classList.add('correct');
-        resultBox.textContent = `🎉 정답! +${points}점 획득!`;
+        const earnedPoints = attempts > 0 ? Math.floor(points / 2) : points;
+        resultBox.textContent = attempts > 0
+          ? `🎉 정답! +${earnedPoints}점 획득! (2번째 도전 — 절반 점수)`
+          : `🎉 정답! +${earnedPoints}점 획득!`;
         resultBox.className = 'result-box show result-correct';
 
         const updates = {
-          points: firebase.firestore.FieldValue.increment(points),
+          points: firebase.firestore.FieldValue.increment(earnedPoints),
           completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
         };
         await db.collection('participants').doc(nickname).update(updates);
