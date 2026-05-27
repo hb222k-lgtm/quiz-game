@@ -1285,12 +1285,28 @@ function openPrintWindow(codes) {
   const win = window.open('', '_blank');
   if (!win) { showToast('팝업이 차단됐어요. 브라우저에서 팝업을 허용해주세요.'); return; }
 
-  const items = codes.map(c => `
+  const TYPE_BADGE = {
+    points:  (p) => `💰 포인트 +${p}점`,
+    minus:   (p) => `📉 차감 -${p}점`,
+    double:  ()  => `🎰 점수 2배`,
+    half:    ()  => `✂️ 점수 절반`,
+    nothing: ()  => `💨 꽝`,
+    quiz:    (p) => `❓ 퀴즈 +${p}점`,
+  };
+  const TYPE_COLOR = {
+    points:'#15803d', minus:'#dc2626', double:'#7c3aed',
+    half:'#ea580c',   nothing:'#64748b', quiz:'#6d28d9',
+  };
+  const items = codes.map(c => {
+    const badge = (TYPE_BADGE[c.type] || TYPE_BADGE.points)(c.points);
+    const color = TYPE_COLOR[c.type] || '#15803d';
+    return `
     <div class="qi">
       <div id="q${c.code}" class="qbox"></div>
       <div class="ql">${c.label}</div>
-      <div class="qp">${c.type === 'quiz' ? '❓ 퀴즈 +' : '💰 +'}${c.points}점</div>
-    </div>`).join('');
+      <div class="qp" style="color:${color}">${badge}</div>
+    </div>`;
+  }).join('');
 
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
   <title>QR 코드 인쇄</title>

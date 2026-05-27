@@ -155,6 +155,9 @@
       <button class="btn btn-outline" onclick="window.location.href='qr-scan.html'">
         📷 QR
       </button>
+      <button class="btn btn-outline" onclick="openSendPoints()" style="background:#f0fdf4; border-color:#86efac; color:#15803d;">
+        💌 보내기
+      </button>
       <button class="btn btn-primary" onclick="window.location.href='shop.html'"
         style="background:var(--grad-cyan);">
         🛒 상점
@@ -163,6 +166,54 @@
         🚪 나가기
       </button>
     </div>
+  </div>
+
+  <!-- 포인트 전송 모달 -->
+  <div id="send-overlay" style="
+    display:none; position:fixed; inset:0; z-index:9990;
+    background:rgba(0,0,0,0.5); backdrop-filter:blur(3px);"
+    onclick="if(event.target===this) closeSendPoints()">
+  </div>
+  <div id="send-modal" style="
+    display:none; position:fixed; bottom:0; left:0; right:0; z-index:9991;
+    background:#fff; border-radius:24px 24px 0 0;
+    padding:24px 20px 36px; box-shadow:0 -8px 40px rgba(0,0,0,0.18);">
+    <div style="width:40px; height:4px; background:#e2e8f0; border-radius:2px; margin:0 auto 20px;"></div>
+    <h3 style="font-size:18px; font-weight:900; margin-bottom:4px; text-align:center;">💌 포인트 보내기</h3>
+    <p style="font-size:13px; color:#64748b; text-align:center; margin-bottom:20px;">
+      내 포인트: ⭐ <span id="send-my-points">0</span>점
+    </p>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">받는 사람 닉네임</label>
+      <input id="send-to" type="text" placeholder="닉네임 입력"
+        style="width:100%; box-sizing:border-box; padding:13px 14px; font-size:16px;
+               border:2px solid #e2e8f0; border-radius:12px; outline:none;
+               font-family:inherit;"
+        oninput="onSendNicknameInput()"
+        onfocus="this.style.borderColor='#7c3aed'"
+        onblur="this.style.borderColor='#e2e8f0'">
+      <div id="send-to-status" style="font-size:12px; margin-top:5px; min-height:18px;"></div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">보낼 포인트</label>
+      <input id="send-amount" type="number" min="1" placeholder="예: 50"
+        style="width:100%; box-sizing:border-box; padding:13px 14px; font-size:22px; font-weight:800;
+               border:2px solid #e2e8f0; border-radius:12px; outline:none;
+               font-family:inherit; text-align:center;"
+        onfocus="this.style.borderColor='#7c3aed'"
+        onblur="this.style.borderColor='#e2e8f0'">
+    </div>
+    <button id="send-btn" onclick="doSendPoints()"
+      style="width:100%; padding:15px; background:linear-gradient(135deg,#7c3aed,#6d28d9);
+             color:#fff; border:none; border-radius:14px; font-size:16px; font-weight:800;
+             cursor:pointer; font-family:inherit;">
+      보내기 💌
+    </button>
+    <button onclick="closeSendPoints()"
+      style="width:100%; padding:12px; background:none; border:none;
+             color:#94a3b8; font-size:14px; cursor:pointer; margin-top:8px; font-family:inherit;">
+      취소
+    </button>
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -675,6 +726,100 @@
         document.getElementById('gps-text').textContent = '새로고침 해주세요';
       };
       document.head.appendChild(fallback);
+    }
+
+    // ── 포인트 전송 ──────────────────────────────
+    let _sendNicknameTimer = null;
+
+    function openSendPoints() {
+      document.getElementById('send-to').value = '';
+      document.getElementById('send-amount').value = '';
+      document.getElementById('send-to-status').textContent = '';
+      document.getElementById('send-my-points').textContent = participant.points || 0;
+      document.getElementById('send-overlay').style.display = 'block';
+      document.getElementById('send-modal').style.display = 'block';
+      setTimeout(() => document.getElementById('send-to').focus(), 100);
+    }
+
+    function closeSendPoints() {
+      document.getElementById('send-overlay').style.display = 'none';
+      document.getElementById('send-modal').style.display = 'none';
+    }
+
+    function onSendNicknameInput() {
+      clearTimeout(_sendNicknameTimer);
+      const val = document.getElementById('send-to').value.trim();
+      const statusEl = document.getElementById('send-to-status');
+      if (!val) { statusEl.textContent = ''; return; }
+      if (val === nickname) {
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = '❌ 자기 자신에게는 보낼 수 없어요';
+        return;
+      }
+      statusEl.style.color = '#94a3b8';
+      statusEl.textContent = '확인 중...';
+      _sendNicknameTimer = setTimeout(async () => {
+        try {
+          const snap = await db.collection('participants').doc(val).get();
+          if (snap.exists) {
+            statusEl.style.color = '#15803d';
+            statusEl.textContent = `✅ ${val} — ⭐ ${snap.data().points || 0}점 보유`;
+          } else {
+            statusEl.style.color = '#dc2626';
+            statusEl.textContent = '❌ 존재하지 않는 닉네임이에요';
+          }
+        } catch(e) {
+          statusEl.style.color = '#dc2626';
+          statusEl.textContent = '오류가 발생했어요';
+        }
+      }, 500);
+    }
+
+    async function doSendPoints() {
+      const toNick = document.getElementById('send-to').value.trim();
+      const amount = parseInt(document.getElementById('send-amount').value);
+      const statusEl = document.getElementById('send-to-status');
+
+      if (!toNick) { showToast('받는 사람 닉네임을 입력해주세요'); return; }
+      if (toNick === nickname) { showToast('자기 자신에게는 보낼 수 없어요'); return; }
+      if (!amount || amount < 1) { showToast('보낼 포인트를 1 이상 입력해주세요'); return; }
+      if ((participant.points || 0) < amount) {
+        showToast(`포인트가 부족해요 (보유: ${participant.points || 0}점)`);
+        return;
+      }
+
+      const btn = document.getElementById('send-btn');
+      btn.disabled = true;
+      btn.textContent = '전송 중...';
+
+      try {
+        // 수신자 존재 여부 재확인
+        const toSnap = await db.collection('participants').doc(toNick).get();
+        if (!toSnap.exists) {
+          showToast('존재하지 않는 닉네임이에요');
+          btn.disabled = false; btn.textContent = '보내기 💌';
+          return;
+        }
+
+        // Firestore 트랜잭션으로 원자적 처리
+        await db.runTransaction(async tx => {
+          const fromRef = db.collection('participants').doc(nickname);
+          const toRef   = db.collection('participants').doc(toNick);
+          const fromDoc = await tx.get(fromRef);
+          if ((fromDoc.data().points || 0) < amount) throw new Error('insufficient');
+          tx.update(fromRef, { points: firebase.firestore.FieldValue.increment(-amount) });
+          tx.update(toRef,   { points: firebase.firestore.FieldValue.increment(amount)  });
+        });
+
+        closeSendPoints();
+        showToast(`✅ ${toNick}님에게 ${amount}점을 보냈어요!`);
+      } catch(e) {
+        if (e.message === 'insufficient') showToast('포인트가 부족해요');
+        else showToast('오류가 발생했어요. 다시 시도해주세요.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '보내기 💌';
+      }
     }
 
     // 뒤로가기로 돌아왔을 때 포인트 즉시 갱신 (bfcache 대응)
