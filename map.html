@@ -1007,13 +1007,14 @@
               border-radius:${bubbleR_me};
               font-size:15px;line-height:1.55;
               word-break:break-word;white-space:pre-wrap;
-              box-shadow:0 1px 4px rgba(0,0,0,0.15);">
+              box-shadow:0 1px 4px rgba(0,0,0,0.15);
+              display:inline-block;max-width:100%;">
               ${escHtml(d.text)}
             </div>`;
         } else {
           // ── 상대 메시지: 왼쪽 ──
           const color    = _nickColor(d.nickname);
-          const initials = [...d.nickname][0]; // 유니코드 안전
+          const initials = [...d.nickname][0];
           row.style.cssText = `display:flex;align-items:flex-end;gap:6px;
             margin-bottom:${mbottom};padding:0 52px 0 6px;`;
 
@@ -1025,7 +1026,7 @@
 
           row.innerHTML = `
             ${avatarHtml}
-            <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+            <div style="display:inline-flex;flex-direction:column;gap:2px;min-width:0;max-width:calc(100% - 46px);">
               ${isGroupFirst ? `<span style="font-size:12px;font-weight:700;color:rgba(0,0,0,0.55);
                 margin-left:2px;margin-bottom:1px;">${escHtml(d.nickname)}</span>` : ''}
               <div style="display:flex;align-items:flex-end;gap:4px;">
@@ -1036,7 +1037,7 @@
                   font-size:15px;line-height:1.55;
                   word-break:break-word;white-space:pre-wrap;
                   box-shadow:0 1px 4px rgba(0,0,0,0.10);
-                  flex-shrink:1;min-width:0;">
+                  display:inline-block;">
                   ${escHtml(d.text)}
                 </div>
                 ${isGroupLast
