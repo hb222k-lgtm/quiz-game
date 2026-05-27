@@ -67,6 +67,10 @@
     .pwa-banner-text { flex: 1; }
     .pwa-banner-text strong { display: block; font-size: 15px; font-weight: 800; color: #1e0a38; }
     .pwa-banner-text span   { font-size: 12px; color: #64748b; line-height: 1.5; }
+    .pwa-banner-close {
+      position: absolute; top: 12px; right: 14px;
+      background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; padding: 4px;
+    }
     .pwa-banner-actions { display: flex; gap: 8px; margin-top: 12px; }
     .pwa-btn-install {
       flex: 1; padding: 12px;
@@ -75,10 +79,10 @@
       font-size: 14px; font-weight: 700; cursor: pointer;
     }
     .pwa-btn-dismiss {
-      padding: 12px 16px;
+      padding: 12px 14px;
       background: #f1f5f9; color: #64748b;
       border: none; border-radius: 12px;
-      font-size: 13px; font-weight: 600; cursor: pointer;
+      font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
     }
 
     /* ── 카카오톡 인앱 브라우저 안내 오버레이 ── */
@@ -244,7 +248,8 @@
   </div>
 
   <!-- Android 설치 배너 -->
-  <div id="pwa-banner">
+  <div id="pwa-banner" style="position:relative;">
+    <button class="pwa-banner-close" id="pwa-close-btn">✕</button>
     <div class="pwa-banner-inner">
       <div class="pwa-banner-icon">🗺️</div>
       <div class="pwa-banner-text">
@@ -254,7 +259,7 @@
     </div>
     <div class="pwa-banner-actions">
       <button class="pwa-btn-install" id="pwa-install-btn">📲 홈 화면에 추가</button>
-      <button class="pwa-btn-dismiss" id="pwa-dismiss-btn">나중에</button>
+      <button class="pwa-btn-dismiss" id="pwa-dismiss-btn">오늘 하루 안보기</button>
     </div>
   </div>
 
@@ -266,6 +271,13 @@
       1. 하단의 <span>공유 버튼 □↑</span> 탭<br>
       2. <span>홈 화면에 추가</span> 선택<br>
       3. 오른쪽 위 <span>추가</span> 탭!
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px;">
+      <button id="ios-today-btn" style="
+        flex:1; padding:10px; background:#f1f5f9; color:#64748b;
+        border:none; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer;">
+        오늘 하루 안보기
+      </button>
     </div>
   </div>
 
@@ -477,9 +489,17 @@
         return; // 카카오톡에서는 PWA 배너 띄울 필요 없음
       }
 
-      // 30일 이내에 이미 dismissal한 경우 건너뜀
-      const dismissed = localStorage.getItem('pwa_dismissed');
-      if (dismissed && Date.now() - Number(dismissed) < 30 * 24 * 60 * 60 * 1000) return;
+      // 오늘 하루 안보기 체크
+      const hideUntil = localStorage.getItem('pwa_hide_until');
+      if (hideUntil && Date.now() < Number(hideUntil)) return;
+
+      // 오늘 자정(내일 00:00) 타임스탬프 반환
+      function todayMidnight() {
+        const d = new Date(); d.setHours(24, 0, 0, 0); return d.getTime();
+      }
+      function hideBannerToday() {
+        localStorage.setItem('pwa_hide_until', todayMidnight());
+      }
 
       const isAndroid = /android/i.test(ua);
 
@@ -502,27 +522,37 @@
         _deferredPrompt.userChoice.then(choice => {
           _deferredPrompt = null;
           document.getElementById('pwa-banner').classList.remove('show');
-          if (choice.outcome === 'accepted') localStorage.setItem('pwa_dismissed', Date.now());
         });
       });
 
+      // ✕ 그냥 닫기 — 오늘만, 다음 방문 시 다시 표시
+      document.getElementById('pwa-close-btn').addEventListener('click', () => {
+        document.getElementById('pwa-banner').classList.remove('show');
+      });
+
+      // 오늘 하루 안보기
       document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
         document.getElementById('pwa-banner').classList.remove('show');
-        localStorage.setItem('pwa_dismissed', Date.now());
+        hideBannerToday();
       });
 
       // ── iOS Safari: 수동 안내 배너 ──
       if (isIOS) {
-        // Safari에서만 표시 (Chrome on iOS는 제외)
         const isSafari = /safari/i.test(ua) && !/chrome/i.test(ua) && !/crios/i.test(ua);
         if (isSafari) {
           setTimeout(() => document.getElementById('ios-banner').classList.add('show'), 1500);
         }
       }
 
+      // iOS ✕ 그냥 닫기
       document.getElementById('ios-close-btn').addEventListener('click', () => {
         document.getElementById('ios-banner').classList.remove('show');
-        localStorage.setItem('pwa_dismissed', Date.now());
+      });
+
+      // iOS 오늘 하루 안보기
+      document.getElementById('ios-today-btn').addEventListener('click', () => {
+        document.getElementById('ios-banner').classList.remove('show');
+        hideBannerToday();
       });
     })();
   </script>
