@@ -995,14 +995,14 @@
 
         if (isMe) {
           // ── 내 메시지: 오른쪽 ──
-          row.style.cssText = `display:flex;justify-content:flex-end;align-items:flex-end;gap:5px;
-            margin-bottom:${mbottom};padding:0 4px 0 44px;`;
+          row.style.cssText = `display:flex;justify-content:flex-end;align-items:flex-end;gap:4px;
+            margin-bottom:${mbottom};padding:0 6px 0 52px;`;
           row.innerHTML = `
             ${isGroupLast
-              ? `<span style="font-size:10px;color:rgba(0,0,0,0.4);white-space:nowrap;padding-bottom:2px;">${timeStr}</span>`
-              : `<span style="width:28px;"></span>`}
+              ? `<span style="font-size:10px;color:rgba(0,0,0,0.4);white-space:nowrap;padding-bottom:2px;flex-shrink:0;">${timeStr}</span>`
+              : `<span style="width:26px;flex-shrink:0;"></span>`}
             <div style="
-              max-width:72%;padding:9px 13px;
+              padding:9px 13px;
               background:#7c3aed;color:#fff;
               border-radius:${bubbleR_me};
               font-size:15px;line-height:1.55;
@@ -1015,31 +1015,32 @@
           const color    = _nickColor(d.nickname);
           const initials = [...d.nickname][0]; // 유니코드 안전
           row.style.cssText = `display:flex;align-items:flex-end;gap:6px;
-            margin-bottom:${mbottom};padding:0 44px 0 4px;`;
+            margin-bottom:${mbottom};padding:0 52px 0 6px;`;
 
           const avatarHtml = isGroupFirst
-            ? `<div style="width:36px;height:36px;border-radius:50%;background:${color};
+            ? `<div style="width:34px;height:34px;border-radius:50%;background:${color};
                  flex-shrink:0;display:flex;align-items:center;justify-content:center;
-                 font-size:15px;font-weight:800;color:#fff;align-self:flex-start;">${initials}</div>`
-            : `<div style="width:36px;flex-shrink:0;"></div>`;
+                 font-size:14px;font-weight:800;color:#fff;align-self:flex-start;">${initials}</div>`
+            : `<div style="width:34px;flex-shrink:0;"></div>`;
 
           row.innerHTML = `
             ${avatarHtml}
-            <div style="display:flex;flex-direction:column;gap:2px;max-width:72%;min-width:0;">
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
               ${isGroupFirst ? `<span style="font-size:12px;font-weight:700;color:rgba(0,0,0,0.55);
                 margin-left:2px;margin-bottom:1px;">${escHtml(d.nickname)}</span>` : ''}
-              <div style="display:flex;align-items:flex-end;gap:5px;">
+              <div style="display:flex;align-items:flex-end;gap:4px;">
                 <div style="
                   padding:9px 13px;
                   background:#fff;color:#1e293b;
                   border-radius:${bubbleR_other};
                   font-size:15px;line-height:1.55;
                   word-break:break-word;white-space:pre-wrap;
-                  box-shadow:0 1px 4px rgba(0,0,0,0.10);">
+                  box-shadow:0 1px 4px rgba(0,0,0,0.10);
+                  flex-shrink:1;min-width:0;">
                   ${escHtml(d.text)}
                 </div>
                 ${isGroupLast
-                  ? `<span style="font-size:10px;color:rgba(0,0,0,0.4);white-space:nowrap;padding-bottom:2px;">${timeStr}</span>`
+                  ? `<span style="font-size:10px;color:rgba(0,0,0,0.4);white-space:nowrap;padding-bottom:2px;flex-shrink:0;">${timeStr}</span>`
                   : ''}
               </div>
             </div>`;
