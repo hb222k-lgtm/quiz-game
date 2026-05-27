@@ -241,13 +241,27 @@ label {
 
 .map-footer {
   background: #fff;
-  padding: 10px 12px;
+  padding: 6px 4px;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
   display: flex;
-  gap: 8px;
-  box-shadow: 0 -2px 16px rgba(124,58,237,0.10);
-  border-top: 2px solid var(--border);
+  gap: 0;
+  box-shadow: 0 -1px 0 rgba(0,0,0,0.08), 0 -4px 20px rgba(124,58,237,0.08);
+  border-top: 1px solid #f1f0f8;
 }
-.map-footer .btn { margin: 0; flex: 1; padding: 12px 8px; font-size: 13px; border-radius: var(--radius-sm); }
+.nav-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; padding: 8px 2px; border: none; background: none; cursor: pointer;
+  position: relative; border-radius: 12px; transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-tab:active { background: #f3f0ff; }
+.nav-tab .nav-icon { font-size: 22px; line-height: 1; display: block; }
+.nav-tab .nav-label {
+  font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: -0.02em;
+  font-family: inherit; line-height: 1;
+}
+.nav-tab.active .nav-label { color: #7c3aed; }
+.nav-tab.active .nav-icon { filter: drop-shadow(0 0 4px rgba(124,58,237,0.4)); }
 
 /* 팝업 */
 .location-popup {

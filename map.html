@@ -147,29 +147,34 @@
       <button class="btn btn-primary" id="popup-btn" onclick="goToQuiz()">퀴즈 풀기 →</button>
     </div>
 
-    <!-- 하단 버튼 -->
+    <!-- 하단 탭바 -->
     <div class="map-footer">
-      <button class="btn btn-primary" id="follow-btn" onclick="toggleFollow()">
-        📍 따라가기
+      <button class="nav-tab active" id="follow-btn" onclick="toggleFollow()">
+        <span class="nav-icon">📍</span>
+        <span class="nav-label" id="follow-label">따라가기</span>
       </button>
-      <button class="btn btn-outline" onclick="window.location.href='qr-scan.html'">
-        📷 QR
+      <button class="nav-tab" onclick="window.location.href='qr-scan.html'">
+        <span class="nav-icon">📷</span>
+        <span class="nav-label">QR 스캔</span>
       </button>
-      <button class="btn btn-outline" onclick="openSendPoints()" style="background:#f0fdf4; border-color:#86efac; color:#15803d;">
-        💌 보내기
+      <button class="nav-tab" onclick="openSendPoints()">
+        <span class="nav-icon">💌</span>
+        <span class="nav-label">보내기</span>
       </button>
-      <button class="btn btn-primary" onclick="window.location.href='shop.html'"
-        style="background:var(--grad-cyan);">
-        🛒 상점
+      <button class="nav-tab" onclick="window.location.href='shop.html'">
+        <span class="nav-icon">🛒</span>
+        <span class="nav-label">상점</span>
       </button>
-      <button class="btn btn-outline" id="community-btn" onclick="openCommunity('players')" style="position:relative;">
-        👥 커뮤니티
-        <span id="chat-badge" style="display:none;position:absolute;top:-5px;right:-5px;
-          background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;
-          font-size:11px;font-weight:800;line-height:18px;text-align:center;">!</span>
+      <button class="nav-tab" id="community-btn" onclick="openCommunity('players')" style="position:relative;">
+        <span class="nav-icon">👥</span>
+        <span class="nav-label">커뮤니티</span>
+        <span id="chat-badge" style="display:none;position:absolute;top:4px;right:calc(50% - 18px);
+          background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;
+          font-size:10px;font-weight:800;line-height:16px;text-align:center;">!</span>
       </button>
-      <button class="btn btn-outline" onclick="window.location.href='index.html'">
-        🚪 나가기
+      <button class="nav-tab" onclick="window.location.href='index.html'">
+        <span class="nav-icon">🚪</span>
+        <span class="nav-label">나가기</span>
       </button>
     </div>
   </div>
@@ -438,17 +443,16 @@
     }
 
     // ── 따라가기 버튼 토글 ────────────────────────
+    function setFollowUI(on) {
+      const btn = document.getElementById('follow-btn');
+      const lbl = document.getElementById('follow-label');
+      btn.classList.toggle('active', on);
+      lbl.textContent = on ? '따라가기' : '꺼짐';
+    }
     function toggleFollow() {
       followMode = !followMode;
-      const btn = document.getElementById('follow-btn');
-      if (followMode) {
-        btn.textContent = '📍 따라가기 켜짐';
-        btn.className = 'btn btn-primary';
-        if (currentLocation) map.panTo([currentLocation.lat, currentLocation.lng]);
-      } else {
-        btn.textContent = '📍 따라가기 꺼짐';
-        btn.className = 'btn btn-outline';
-      }
+      setFollowUI(followMode);
+      if (followMode && currentLocation) map.panTo([currentLocation.lat, currentLocation.lng]);
     }
 
     // ── GPS 상태 표시 ─────────────────────────────
@@ -774,9 +778,7 @@
       map.on('dragstart', () => {
         if (followMode) {
           followMode = false;
-          const btn = document.getElementById('follow-btn');
-          btn.textContent = '📍 따라가기 꺼짐';
-          btn.className = 'btn btn-outline';
+          setFollowUI(false);
         }
       });
       startGPS();
