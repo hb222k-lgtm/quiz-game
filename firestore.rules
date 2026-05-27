@@ -51,5 +51,10 @@ service cloud.firestore {
     match /config/{configId} {
       allow read, write: if true;
     }
+
+    // 채팅 메시지
+    match /chat/{msgId} {
+      allow read, write: if true;
+    }
   }
 }

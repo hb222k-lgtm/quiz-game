@@ -162,6 +162,12 @@
         style="background:var(--grad-cyan);">
         🛒 상점
       </button>
+      <button class="btn btn-outline" id="community-btn" onclick="openCommunity('players')" style="position:relative;">
+        👥 커뮤니티
+        <span id="chat-badge" style="display:none;position:absolute;top:-5px;right:-5px;
+          background:#ef4444;color:#fff;border-radius:50%;width:18px;height:18px;
+          font-size:11px;font-weight:800;line-height:18px;text-align:center;">!</span>
+      </button>
       <button class="btn btn-outline" onclick="window.location.href='index.html'">
         🚪 나가기
       </button>
@@ -214,6 +220,76 @@
              color:#94a3b8; font-size:14px; cursor:pointer; margin-top:8px; font-family:inherit;">
       취소
     </button>
+  </div>
+
+  <!-- 커뮤니티 패널 (참가자 목록 + 채팅) -->
+  <div id="community-panel" style="
+    display:none; position:fixed; inset:0; z-index:9980;
+    background:#f3f0ff; flex-direction:column; font-family:inherit;">
+
+    <!-- 헤더 -->
+    <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);
+      padding:16px 16px 0; padding-top:max(16px,env(safe-area-inset-top));">
+      <div style="display:flex; align-items:center; margin-bottom:14px;">
+        <button onclick="closeCommunity()" style="
+          background:rgba(255,255,255,0.2); border:none; color:#fff;
+          width:36px; height:36px; border-radius:50%; font-size:18px;
+          cursor:pointer; margin-right:12px; flex-shrink:0;">←</button>
+        <span style="color:#fff; font-size:18px; font-weight:900; flex:1;">커뮤니티</span>
+      </div>
+      <!-- 탭 -->
+      <div style="display:flex; gap:4px;">
+        <button id="ctab-players" onclick="switchCommunityTab('players')" style="
+          flex:1; padding:10px 0; border:none; border-radius:12px 12px 0 0;
+          font-size:14px; font-weight:800; cursor:pointer; transition:all 0.15s;
+          background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.7);">
+          👥 참가자 순위
+        </button>
+        <button id="ctab-chat" onclick="switchCommunityTab('chat')" style="
+          flex:1; padding:10px 0; border:none; border-radius:12px 12px 0 0;
+          font-size:14px; font-weight:800; cursor:pointer; transition:all 0.15s;
+          background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.7);">
+          💬 채팅
+        </button>
+      </div>
+    </div>
+
+    <!-- 참가자 목록 탭 -->
+    <div id="cpanel-players" style="flex:1; overflow-y:auto; padding:12px 14px; display:none;">
+      <div id="players-list" style="display:flex; flex-direction:column; gap:8px;">
+        <div style="text-align:center; padding:40px; color:#94a3b8;">불러오는 중...</div>
+      </div>
+    </div>
+
+    <!-- 채팅 탭 -->
+    <div id="cpanel-chat" style="flex:1; display:none; flex-direction:column; min-height:0;">
+      <div id="chat-messages" style="
+        flex:1; overflow-y:auto; padding:12px 14px;
+        display:flex; flex-direction:column; gap:8px;
+        -webkit-overflow-scrolling:touch;">
+        <div style="text-align:center; padding:40px; color:#94a3b8;">채팅을 불러오는 중...</div>
+      </div>
+      <!-- 입력창 -->
+      <div style="
+        padding:10px 12px; padding-bottom:max(12px,env(safe-area-inset-bottom));
+        background:#fff; border-top:1px solid #e2e8f0;
+        display:flex; gap:8px; align-items:flex-end;">
+        <textarea id="chat-input" placeholder="메시지를 입력하세요..." rows="1"
+          style="flex:1; padding:10px 14px; border:2px solid #e2e8f0; border-radius:20px;
+                 font-size:15px; font-family:inherit; resize:none; outline:none;
+                 max-height:80px; overflow-y:auto; line-height:1.4;"
+          onfocus="this.style.borderColor='#7c3aed'"
+          onblur="this.style.borderColor='#e2e8f0'"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+          oninput="autoResizeChat(this)"></textarea>
+        <button onclick="sendChat()" style="
+          width:42px; height:42px; border-radius:50%; border:none; flex-shrink:0;
+          background:linear-gradient(135deg,#7c3aed,#a855f7); color:#fff;
+          font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+          ➤
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -726,6 +802,215 @@
         document.getElementById('gps-text').textContent = '새로고침 해주세요';
       };
       document.head.appendChild(fallback);
+    }
+
+    // ── 커뮤니티 (참가자 목록 + 채팅) ─────────────
+    let _communityTab = 'players';
+    let _chatUnsubscribe = null;
+    let _playersUnsubscribe = null;
+    let _chatOpen = false;
+    let _chatHasNew = false;
+
+    const RANK_MEDAL = ['🥇','🥈','🥉'];
+
+    function openCommunity(tab = 'players') {
+      const panel = document.getElementById('community-panel');
+      panel.style.display = 'flex';
+      document.getElementById('chat-badge').style.display = 'none';
+      _chatHasNew = false;
+      switchCommunityTab(tab);
+      startCommunityListeners();
+    }
+
+    function closeCommunity() {
+      document.getElementById('community-panel').style.display = 'none';
+      _chatOpen = false;
+    }
+
+    function switchCommunityTab(tab) {
+      _communityTab = tab;
+      _chatOpen = (tab === 'chat');
+
+      // 탭 버튼 스타일
+      ['players','chat'].forEach(t => {
+        const btn = document.getElementById('ctab-' + t);
+        if (t === tab) {
+          btn.style.background = '#fff';
+          btn.style.color = '#7c3aed';
+        } else {
+          btn.style.background = 'rgba(255,255,255,0.15)';
+          btn.style.color = 'rgba(255,255,255,0.7)';
+        }
+      });
+
+      // 패널 표시
+      document.getElementById('cpanel-players').style.display = tab === 'players' ? 'block' : 'none';
+      document.getElementById('cpanel-chat').style.display    = tab === 'chat'    ? 'flex'  : 'none';
+
+      if (tab === 'chat') {
+        document.getElementById('chat-badge').style.display = 'none';
+        _chatHasNew = false;
+        setTimeout(() => scrollChatBottom(true), 50);
+        setTimeout(() => document.getElementById('chat-input').focus(), 100);
+      }
+    }
+
+    function startCommunityListeners() {
+      if (!_playersUnsubscribe) {
+        _playersUnsubscribe = db.collection('participants')
+          .onSnapshot(snap => renderPlayersList(snap));
+      }
+      if (!_chatUnsubscribe) {
+        _chatUnsubscribe = db.collection('chat')
+          .orderBy('sentAt', 'asc')
+          .limitToLast(100)
+          .onSnapshot(snap => renderChat(snap));
+      }
+    }
+
+    function renderPlayersList(snap) {
+      const players = snap.docs
+        .map(d => ({ nick: d.id, ...d.data() }))
+        .sort((a, b) => (b.points || 0) - (a.points || 0));
+
+      const el = document.getElementById('players-list');
+      if (!players.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;">참가자가 없어요</div>';
+        return;
+      }
+
+      el.innerHTML = players.map((p, i) => {
+        const isMe = p.nick === nickname;
+        const medal = RANK_MEDAL[i] || `<span style="font-size:13px;font-weight:800;color:#64748b;">${i+1}</span>`;
+        return `<div style="
+          background:${isMe ? 'linear-gradient(135deg,#ede9fe,#faf5ff)' : '#fff'};
+          border:${isMe ? '2px solid #a78bfa' : '1.5px solid #e2e8f0'};
+          border-radius:14px; padding:12px 14px;
+          display:flex; align-items:center; gap:12px;">
+          <div style="width:32px;text-align:center;font-size:${i<3?'22':'14'}px;flex-shrink:0;">${medal}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:15px;font-weight:800;color:#1e293b;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${p.nick}${isMe ? ' <span style="font-size:11px;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:6px;">나</span>' : ''}
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">
+              완료 ${(p.completedLocations||[]).length}곳
+            </div>
+          </div>
+          <div style="font-size:18px;font-weight:900;color:#7c3aed;flex-shrink:0;">
+            ⭐ ${p.points || 0}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderChat(snap) {
+      const el = document.getElementById('chat-messages');
+      if (!snap.docs.length) {
+        el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:14px;">아직 메시지가 없어요<br>첫 메시지를 남겨보세요! 👋</div>';
+        return;
+      }
+
+      const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      const isFirst = el.children.length <= 1 && el.children[0]?.style?.textAlign === 'center';
+
+      // 증분 렌더: 새 메시지만 추가
+      snap.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const d = change.doc.data();
+        const isMe = d.nickname === nickname;
+        const time = d.sentAt?.toDate ? _chatTimeStr(d.sentAt.toDate()) : '';
+
+        // 첫 렌더면 전체 교체
+        if (isFirst) return;
+
+        const div = document.createElement('div');
+        div.setAttribute('data-id', change.doc.id);
+        div.style.cssText = `display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px;`;
+        div.innerHTML = `
+          ${!isMe ? `<span style="font-size:11px;color:#64748b;margin-left:8px;">${d.nickname}</span>` : ''}
+          <div style="max-width:75%;padding:10px 14px;border-radius:${isMe?'18px 4px 18px 18px':'4px 18px 18px 18px'};
+            background:${isMe?'linear-gradient(135deg,#7c3aed,#a855f7)':'#fff'};
+            color:${isMe?'#fff':'#1e293b'};font-size:15px;line-height:1.5;
+            box-shadow:0 2px 8px rgba(0,0,0,0.08);word-break:break-word;white-space:pre-wrap;">
+            ${escHtml(d.text)}
+          </div>
+          <span style="font-size:11px;color:#94a3b8;margin:0 4px;">${time}</span>`;
+        el.appendChild(div);
+      });
+
+      // 첫 렌더 또는 전체 새로고침 시
+      if (isFirst) {
+        el.innerHTML = '';
+        let prevNick = null;
+        snap.docs.forEach(doc => {
+          const d = doc.data();
+          const isMe = d.nickname === nickname;
+          const time = d.sentAt?.toDate ? _chatTimeStr(d.sentAt.toDate()) : '';
+          const showNick = !isMe && d.nickname !== prevNick;
+          prevNick = d.nickname;
+
+          const div = document.createElement('div');
+          div.setAttribute('data-id', doc.id);
+          div.style.cssText = `display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px;`;
+          div.innerHTML = `
+            ${showNick ? `<span style="font-size:11px;color:#64748b;margin-left:8px;">${d.nickname}</span>` : ''}
+            <div style="max-width:75%;padding:10px 14px;border-radius:${isMe?'18px 4px 18px 18px':'4px 18px 18px 18px'};
+              background:${isMe?'linear-gradient(135deg,#7c3aed,#a855f7)':'#fff'};
+              color:${isMe?'#fff':'#1e293b'};font-size:15px;line-height:1.5;
+              box-shadow:0 2px 8px rgba(0,0,0,0.08);word-break:break-word;white-space:pre-wrap;">
+              ${escHtml(d.text)}
+            </div>
+            <span style="font-size:11px;color:#94a3b8;margin:0 4px;">${time}</span>`;
+          el.appendChild(div);
+        });
+      }
+
+      if (wasAtBottom || isFirst) {
+        scrollChatBottom(isFirst);
+      } else if (!_chatOpen) {
+        // 채팅 탭이 열려있지 않으면 뱃지 표시
+        _chatHasNew = true;
+        document.getElementById('chat-badge').style.display = 'block';
+      }
+    }
+
+    function scrollChatBottom(instant) {
+      const el = document.getElementById('chat-messages');
+      if (instant) el.scrollTop = el.scrollHeight;
+      else el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+
+    function _chatTimeStr(date) {
+      const h = date.getHours(), m = String(date.getMinutes()).padStart(2,'0');
+      return `${h}:${m}`;
+    }
+
+    function escHtml(str) {
+      return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      autoResizeChat(input);
+      try {
+        await db.collection('chat').add({
+          nickname,
+          text,
+          sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch(e) {
+        showToast('메시지 전송 실패');
+        input.value = text;
+      }
+    }
+
+    function autoResizeChat(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 80) + 'px';
     }
 
     // ── 포인트 전송 ──────────────────────────────
