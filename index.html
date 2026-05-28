@@ -231,7 +231,6 @@
       <p class="text-muted mb-8" style="font-size:13px;">이전 참여 기록이 있어요</p>
       <p id="saved-name" style="margin-bottom:18px;"></p>
       <button class="btn btn-primary" onclick="continueGame()">이어서 하기 →</button>
-      <button class="btn btn-outline mt-8" onclick="newGame()">다른 닉네임으로 시작</button>
     </div>
 
     <div class="info-chips">
@@ -392,17 +391,27 @@
 
       const saved = getNickname();
       if (saved) {
-        document.getElementById('login-card').style.display = 'none';
-        document.getElementById('continue-card').style.display = 'block';
-        document.getElementById('saved-name').textContent = saved;
+        // Firestore에서 계정 존재 여부 확인 (관리자가 삭제했을 수 있음)
+        try {
+          const snap = await db.collection('participants').doc(saved).get();
+          if (snap.exists) {
+            // 계정 있음 → 이어하기 카드
+            document.getElementById('login-card').style.display = 'none';
+            document.getElementById('continue-card').style.display = 'block';
+            document.getElementById('saved-name').textContent = saved;
+          } else {
+            // 계정 삭제됨 → localStorage 초기화 후 등록 화면
+            clearNickname();
+            showToast('계정이 삭제됐어요. 새로 시작해주세요.');
+          }
+        } catch(e) {
+          // 네트워크 오류 → 일단 이어하기 표시 (map.html에서 재확인)
+          document.getElementById('login-card').style.display = 'none';
+          document.getElementById('continue-card').style.display = 'block';
+          document.getElementById('saved-name').textContent = saved;
+        }
       }
     })();
-
-    function newGame() {
-      clearNickname();
-      document.getElementById('continue-card').style.display = 'none';
-      document.getElementById('login-card').style.display = 'block';
-    }
 
     function continueGame() {
       window.location.href = 'map.html';
@@ -462,6 +471,29 @@
             return;
           }
         } else {
+          // ── 기기 중복 체크 (같은 폰으로 여러 아이디 방지) ──
+          if (GAME_CONFIG.DEVICE_LOCK) {
+            const deviceId = getDeviceId();
+            let devSnap;
+            try {
+              devSnap = await db.collection('participants')
+                .where('deviceId', '==', deviceId).limit(1).get();
+            } catch (_) {
+              devSnap = { empty: true }; // 쿼리 오류 시 차단하지 않음
+            }
+            if (!devSnap.empty) {
+              const existingNick = devSnap.docs[0].data().nickname;
+              // 기존 닉네임으로 자동 입력 후 로그인 화면으로
+              document.getElementById('name-input').value = existingNick;
+              backToNickname();
+              btn.textContent = '다음 →'; btn.disabled = false;
+              setTimeout(() => {
+                showDeviceLockAlert(existingNick);
+              }, 150);
+              return;
+            }
+          }
+
           // 신규 참가자 → 등록 (race condition 방지)
           const snap = await db.collection('participants').doc(name).get();
           if (snap.exists && snap.data()?.pin) {
@@ -470,6 +502,7 @@
           }
           await db.collection('participants').doc(name).set({
             nickname: name, pin,
+            deviceId: GAME_CONFIG.DEVICE_LOCK ? getDeviceId() : null,
             points: 0, completedLocations: [], scannedQRs: [],
             joinedAt: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
@@ -486,6 +519,59 @@
       document.getElementById('step-pin').style.display = 'none';
       document.getElementById('step-nickname').style.display = 'block';
       document.getElementById('pin-input').value = '';
+    }
+
+    // ── 기기 잠금 안내 모달 ─────────────────────────
+    function showDeviceLockAlert(existingNick) {
+      // 기존 모달 제거
+      const old = document.getElementById('device-lock-modal');
+      if (old) old.remove();
+
+      const el = document.createElement('div');
+      el.id = 'device-lock-modal';
+      el.style.cssText = `
+        position:fixed; inset:0; z-index:9999;
+        background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+        display:flex; align-items:center; justify-content:center; padding:20px;
+      `;
+      el.innerHTML = `
+        <div style="
+          background:#1a0a35; border:1.5px solid rgba(124,58,237,0.4);
+          border-radius:20px; padding:28px 24px; max-width:340px; width:100%;
+          box-shadow:0 12px 48px rgba(0,0,0,0.5);">
+          <div style="font-size:36px; text-align:center; margin-bottom:12px;">📱</div>
+          <h3 style="color:#fff; font-size:17px; font-weight:900; text-align:center; margin-bottom:8px;">
+            이 기기에 이미 계정이 있어요
+          </h3>
+          <p style="color:#c4b5fd; font-size:13px; text-align:center; line-height:1.6; margin-bottom:20px;">
+            <b style="color:#a78bfa;">"${existingNick}"</b> 계정이 이 기기에 등록돼 있어요.<br>
+            한 기기에 하나의 계정만 사용할 수 있어요.
+          </p>
+          <button id="device-lock-login-btn" style="
+            width:100%; padding:14px; margin-bottom:10px;
+            background:linear-gradient(135deg,#7c3aed,#6d28d9);
+            color:#fff; border:none; border-radius:12px;
+            font-size:15px; font-weight:800; cursor:pointer;">
+            👋 "${existingNick}" 으로 로그인
+          </button>
+          <button onclick="document.getElementById('device-lock-modal').remove();"
+            style="
+              width:100%; padding:12px;
+              background:rgba(255,255,255,0.08); color:#c4b5fd;
+              border:none; border-radius:12px;
+              font-size:14px; cursor:pointer;">
+            닫기
+          </button>
+        </div>`;
+      document.body.appendChild(el);
+      el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+
+      // 로그인 버튼: data 방식으로 닉네임 안전 전달
+      document.getElementById('device-lock-login-btn').addEventListener('click', () => {
+        el.remove();
+        document.getElementById('name-input').value = existingNick;
+        checkNickname();
+      });
     }
 
     document.getElementById('name-input').addEventListener('keydown', e => {

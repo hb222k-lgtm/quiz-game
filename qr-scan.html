@@ -15,9 +15,9 @@
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="dns-prefetch" href="https://www.gstatic.com">
   <link rel="dns-prefetch" href="https://unpkg.com">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=4">
   <style>
-    body { background: linear-gradient(160deg, #f3f0ff 0%, #ede9fe 40%, #fdf2ff 100%); }
+    body { background: linear-gradient(160deg, #0d0720 0%, #1a0a35 40%, #2d1060 100%); }
     /* html5-qrcode 기본 UI 숨기기 */
     #qr-reader__scan_region > img { display: none; }
     #qr-reader__dashboard_section_csr span { font-size: 13px !important; }
@@ -276,7 +276,11 @@
             const qRef = db.collection('qrcodes').doc(code);
             const qSnap = await tx.get(qRef);
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
-            tx.update(pRef, { points: firebase.firestore.FieldValue.increment(qrData.points), scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
+            tx.update(pRef, {
+              points:       firebase.firestore.FieldValue.increment(qrData.points),
+              earnedPoints: firebase.firestore.FieldValue.increment(qrData.points),
+              scannedQRs:   firebase.firestore.FieldValue.arrayUnion(code)
+            });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
           showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${qrData.points}점 획득!`);
@@ -331,8 +335,9 @@
               throw new Error('ALREADY_USED');
             }
             tx.update(db.collection('participants').doc(nickname), {
-              points: firebase.firestore.FieldValue.increment(pts),
-              scannedQRs: firebase.firestore.FieldValue.arrayUnion(qrData.id)
+              points:       firebase.firestore.FieldValue.increment(pts),
+              earnedPoints: firebase.firestore.FieldValue.increment(pts),
+              scannedQRs:   firebase.firestore.FieldValue.arrayUnion(qrData.id)
             });
             tx.update(qRef, {
               usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)

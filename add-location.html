@@ -597,7 +597,7 @@
           <div style="display:flex; gap:6px; margin-top:10px;">
             <button onclick="goEdit('${loc.id}')"
               style="flex:1; padding:6px 0; background:#ede9fe; border:none; border-radius:8px; color:#6d28d9; font-size:12px; font-weight:700; cursor:pointer;">✏️ 수정</button>
-            <button onclick="deleteLocation('${loc.id}', '${escHtml(loc.name).replace(/'/g, "\\'")}')"
+            <button onclick="deleteLocation('${loc.id}')"
               style="flex:1; padding:6px 0; background:#fee2e2; border:none; border-radius:8px; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer;">🗑 삭제</button>
           </div>
         </div>`, { maxWidth: 200 });
@@ -606,7 +606,9 @@
     });
   }
 
-  async function deleteLocation(id, name) {
+  async function deleteLocation(id) {
+    const loc = locationsData.find(l => l.id === id);
+    const name = loc?.name || id;
     if (!confirm(`"${name}" 장소를 삭제할까요?\n참가자 완료 기록은 유지됩니다.`)) return;
     try {
       await db.collection('locations').doc(id).delete();
@@ -896,7 +898,7 @@
   function goBack() { window.location.href = 'admin.html'; }
 
   function escHtml(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   function showToast(msg) {

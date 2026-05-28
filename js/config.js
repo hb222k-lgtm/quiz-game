@@ -27,7 +27,35 @@ const GAME_CONFIG = {
 
   // 사이트 기본 URL (QR코드 생성에 사용)
   SITE_URL: window.location.origin + window.location.pathname.replace(/[^/]*$/, ''),
+
+  // 같은 기기로 여러 아이디 만드는 것 차단 (true = 차단, false = 허용)
+  DEVICE_LOCK: true,
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  기기 고유 ID (1기기 1계정 제한용)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function getDeviceId() {
+  let id = localStorage.getItem('quiz_device_id');
+  if (!id) {
+    // 기기 지문 해시 (FNV-1a) + 랜덤 → localStorage에 저장
+    const fp = [
+      navigator.userAgent.slice(-60),
+      screen.width + 'x' + screen.height + 'x' + (screen.colorDepth || 0),
+      navigator.language || '',
+      navigator.hardwareConcurrency || 0,
+      new Date().getTimezoneOffset()
+    ].join('||');
+    let h = 2166136261;
+    for (let i = 0; i < fp.length; i++) {
+      h ^= fp.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    id = h.toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('quiz_device_id', id);
+  }
+  return id;
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Firebase 초기화 (테스트 모드에서는 건너뜀)

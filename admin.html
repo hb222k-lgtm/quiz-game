@@ -210,8 +210,8 @@
         </div>
 
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="saveGamePeriod()">💾 저장</button>
-          <button class="btn btn-outline" onclick="clearGamePeriod()">기간 해제</button>
+          <button class="btn btn-primary" style="flex:1; padding:13px;" onclick="saveGamePeriod()">💾 저장</button>
+          <button class="btn btn-outline" style="flex:1; padding:13px;" onclick="clearGamePeriod()">기간 해제</button>
         </div>
 
         <div id="game-period-status" style="display:none; margin-top:12px; padding:10px 14px; border-radius:10px; font-size:13px; font-weight:600; text-align:center;"></div>
@@ -254,6 +254,32 @@
               style="width:100%; padding:18px 16px; border:2px solid #e2e8f0; border-radius:14px; font-size:28px; font-weight:800; outline:none; box-sizing:border-box; text-align:center; color:#7c3aed; -moz-appearance:textfield;">
           </div>
           <button class="btn btn-primary" style="width:100%; padding:16px; font-size:16px; border-radius:14px;" onclick="addMilestone()">+ 구간 추가</button>
+        </div>
+      </div>
+
+      <!-- 포인트 전송 제한 카드 -->
+      <div class="card mt-16">
+        <h3 style="font-weight:700; margin-bottom:4px;">💌 포인트 전송 제한</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">
+          한 참가자가 게임 기간 전체에 걸쳐 보낼 수 있는 최대 포인트를 제한해요.<br>
+          <span style="color:#f59e0b; font-weight:600;">직접 번 포인트(퀴즈·QR)만 보낼 수 있어요. 받은 포인트는 재전송 불가.</span>
+        </p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">총 전송 한도 (0 = 무제한)</label>
+          <input type="number" id="max-total-send" min="0" placeholder="예: 200"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:16px; font-weight:700; outline:none; box-sizing:border-box;">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="saveTransferLimit()">💾 저장</button>
+      </div>
+
+      <!-- 전송 내역 로그 카드 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="font-weight:700;">📋 포인트 전송 내역</h3>
+          <button class="btn btn-outline btn-sm" onclick="loadTransferLog()" style="font-size:12px;">새로고침</button>
+        </div>
+        <div id="transfer-log-list">
+          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:12px;">불러오는 중...</p>
         </div>
       </div>
 
@@ -674,7 +700,7 @@ function switchTab(id, btn) {
   document.getElementById('tab-' + id).classList.add('active');
   btn.classList.add('active');
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
-  if (id === 'settings') loadGamePeriod();
+  if (id === 'settings') { loadGamePeriod(); loadTransferLimit(); loadTransferLog(); }
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
@@ -753,7 +779,9 @@ function renderLeaderboard(list) {
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <div class="rank-points">${p.points || 0}점</div>
-          <button class="btn btn-primary btn-sm" onclick="openGivePointsModal('${escHtml(p.nickname)}', ${p.points || 0})">
+          <button class="btn btn-primary btn-sm"
+            data-nick="${escHtml(p.nickname)}" data-pts="${p.points || 0}"
+            onclick="openGivePointsModal(this.dataset.nick, +this.dataset.pts)">
             +포인트
           </button>
         </div>
@@ -770,21 +798,43 @@ function renderParticipantManager(list) {
     el.innerHTML = '<p class="text-muted text-center" style="padding:16px;">참가자가 없어요</p>';
     return;
   }
-  el.innerHTML = list.map((p, i) => `
-    <div style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+  el.innerHTML = list.map((p, i) => {
+    const hasDevice = !!p.deviceId;
+    return `
+    <div style="display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid #f1f5f9;">
       <div style="width:28px; height:28px; border-radius:50%; background:#ede9fe; color:#7c3aed;
                   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">
         ${i + 1}
       </div>
       <div style="flex:1; min-width:0;">
         <div style="font-weight:700; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(p.nickname)}</div>
-        <div style="font-size:12px; color:#64748b;">⭐ ${p.points || 0}점 · 장소 ${(p.completedLocations||[]).length}곳</div>
+        <div style="font-size:12px; color:#64748b;">⭐ ${p.points || 0}점 · 장소 ${(p.completedLocations||[]).length}곳
+          ${hasDevice ? '<span style="color:#7c3aed;">📱</span>' : '<span style="color:#94a3b8;" title="기기 미등록">🔓</span>'}
+        </div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="openGivePointsModal('${escHtml(p.nickname)}', ${p.points || 0})"
+      <button class="btn btn-outline btn-sm"
+        data-nick="${escHtml(p.nickname)}" data-pts="${p.points || 0}"
+        onclick="openGivePointsModal(this.dataset.nick, +this.dataset.pts)"
         style="padding:5px 10px; font-size:12px; white-space:nowrap;">±포인트</button>
-      <button onclick="deleteParticipantById('${escHtml(p.nickname)}')"
+      ${hasDevice ? `<button data-nick="${escHtml(p.nickname)}" title="기기 잠금 해제 (다른 폰으로 재등록 허용)"
+        onclick="unlockDevice(this.dataset.nick)"
+        style="background:none; border:1.5px solid #f59e0b; border-radius:8px; color:#f59e0b; font-size:13px; cursor:pointer; padding:4px 7px; flex-shrink:0;">📱🔓</button>` : ''}
+      <button data-nick="${escHtml(p.nickname)}"
+        onclick="deleteParticipantById(this.dataset.nick)"
         style="background:none; border:none; color:#ef4444; font-size:18px; cursor:pointer; padding:4px; flex-shrink:0;">🗑</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+// ── 기기 잠금 해제 ────────────────────────────────
+async function unlockDevice(nick) {
+  if (!confirm(`"${nick}" 의 기기 잠금을 해제할까요?\n해제하면 다른 폰으로 새 계정 등록이 가능해져요.`)) return;
+  try {
+    await db.collection('participants').doc(nick).update({ deviceId: null });
+    showToast(`📱 "${nick}" 기기 잠금 해제됐어요`);
+  } catch(e) {
+    showToast('오류: ' + e.message);
+  }
 }
 
 // ── 장소 실시간 ───────────────────────────────────
@@ -1801,6 +1851,52 @@ async function loadGamePeriod() {
     if (d.endDate)   document.getElementById('game-end-date').value   = _toLocalInput(d.endDate.toDate());
     renderGamePeriodStatus(d);
   } catch(e) {}
+}
+
+// ── 포인트 전송 한도 저장/로드 ──────────────────────
+async function loadTransferLimit() {
+  try {
+    const snap = await db.collection('config').doc('game').get();
+    const val = snap.exists ? (snap.data().maxTotalSend ?? 0) : 0;
+    document.getElementById('max-total-send').value = val;
+  } catch(e) {}
+}
+
+async function saveTransferLimit() {
+  const val = parseInt(document.getElementById('max-total-send').value) || 0;
+  await db.collection('config').doc('game').set({ maxTotalSend: val }, { merge: true });
+  showToast(val > 0 ? `💌 전송 한도 ${val}점으로 설정됐어요` : '💌 전송 한도 무제한으로 설정됐어요');
+}
+
+// ── 전송 내역 로그 ────────────────────────────────
+async function loadTransferLog() {
+  const el = document.getElementById('transfer-log-list');
+  if (!el) return;
+  el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:8px;">불러오는 중...</p>';
+  try {
+    const snap = await db.collection('transfers')
+      .orderBy('sentAt', 'desc').limit(50).get();
+    if (snap.empty) {
+      el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:12px;">전송 내역이 없어요</p>';
+      return;
+    }
+    el.innerHTML = snap.docs.map(d => {
+      const t = d.data();
+      const time = t.sentAt ? new Date(t.sentAt.toDate()).toLocaleString('ko-KR') : '-';
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
+          <div style="flex:1;">
+            <span style="font-weight:700;">${escHtml(t.from)}</span>
+            <span style="color:#94a3b8;margin:0 4px;">→</span>
+            <span style="font-weight:700;">${escHtml(t.to)}</span>
+          </div>
+          <div style="font-weight:800;color:#7c3aed;white-space:nowrap;">+${t.amount}점</div>
+          <div style="font-size:11px;color:#94a3b8;white-space:nowrap;">${time}</div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<p style="font-size:13px;color:#ef4444;text-align:center;">오류: ${e.message}</p>`;
+  }
 }
 
 async function saveGamePeriod() {

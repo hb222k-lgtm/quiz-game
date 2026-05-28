@@ -341,7 +341,8 @@
         resultBox.className = 'result-box show result-correct';
 
         const updates = {
-          points: firebase.firestore.FieldValue.increment(earnedPoints),
+          points:       firebase.firestore.FieldValue.increment(earnedPoints),
+          earnedPoints: firebase.firestore.FieldValue.increment(earnedPoints), // 직접 번 포인트 별도 추적
           completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
         };
         await db.collection('participants').doc(nickname).update(updates);

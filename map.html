@@ -176,6 +176,35 @@
     </div>
   </div>
 
+  <!-- GPS 권한 안내 카드 -->
+  <div id="gps-guide" style="
+    display:none; position:fixed; bottom:72px; left:12px; right:12px; z-index:9000;
+    background:#1e1040; border:1.5px solid rgba(239,68,68,0.5);
+    border-radius:16px; padding:14px 16px;
+    box-shadow:0 4px 24px rgba(0,0,0,0.5);">
+    <div style="display:flex; align-items:flex-start; gap:10px;">
+      <div style="font-size:24px; flex-shrink:0;">📍</div>
+      <div style="flex:1;">
+        <div style="font-weight:800; color:#fff; font-size:14px; margin-bottom:4px;">GPS 위치 권한이 필요해요</div>
+        <div id="gps-guide-text" style="font-size:12px; color:#c4b5fd; line-height:1.6;"></div>
+      </div>
+      <button onclick="document.getElementById('gps-guide').style.display='none'"
+        style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;flex-shrink:0;padding:0;">✕</button>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button onclick="retryGPSPermission()"
+        style="flex:1; padding:9px; background:linear-gradient(135deg,#7c3aed,#6d28d9);
+               color:#fff; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer;">
+        🔄 다시 시도
+      </button>
+      <button onclick="document.getElementById('gps-guide').style.display='none'"
+        style="padding:9px 14px; background:rgba(255,255,255,0.1); color:#c4b5fd;
+               border:none; border-radius:10px; font-size:13px; cursor:pointer;">
+        닫기
+      </button>
+    </div>
+  </div>
+
   <!-- 포인트 전송 모달 -->
   <div id="send-overlay" style="
     display:none; position:fixed; inset:0; z-index:9990;
@@ -185,7 +214,8 @@
   <div id="send-modal" style="
     display:none; position:fixed; bottom:0; left:0; right:0; z-index:9991;
     background:#fff; border-radius:24px 24px 0 0;
-    padding:24px 20px 36px; box-shadow:0 -8px 40px rgba(0,0,0,0.18);">
+    padding:24px 20px max(36px, env(safe-area-inset-bottom));
+    box-shadow:0 -8px 40px rgba(0,0,0,0.18);">
     <div style="width:40px; height:4px; background:#e2e8f0; border-radius:2px; margin:0 auto 20px;"></div>
     <h3 style="font-size:18px; font-weight:900; margin-bottom:4px; text-align:center;">💌 포인트 보내기</h3>
     <p style="font-size:13px; color:#64748b; text-align:center; margin-bottom:20px;">
@@ -536,24 +566,93 @@
     // ── GPS 감시 ──────────────────────────────────
     let _gpsWatchId = null;
     let _gpsRetryTimer = null;
+    let _gpsFailCount = 0;      // 연속 실패 횟수 (고정밀 → 저정밀 자동 전환용)
+    let _gpsPermDenied = false; // 권한 거부 상태
+
+    // 브라우저/OS별 GPS 허용 안내 문자열
+    function _gpsGuideText() {
+      const ua = navigator.userAgent;
+      if (/CriOS/.test(ua))
+        return '① 하단 공유 버튼 → 설정 → 크롬<br>② 위치 → <b>앱 사용 중 허용</b>';
+      if (/Chrome/.test(ua) && /Android/.test(ua))
+        return '① 주소창 왼쪽 🔒 아이콘 탭<br>② 위치 → <b>허용</b> 선택';
+      if (/Chrome/.test(ua))
+        return '① 주소창 왼쪽 🔒 아이콘 클릭<br>② 위치 → <b>허용</b> 선택';
+      if (/Safari/.test(ua))
+        return '① 설정 앱 → Safari → 위치<br>② <b>방문 중 허용</b> 선택';
+      return '브라우저 주소창 근처의 위치 아이콘을 탭해서 허용해주세요';
+    }
+
+    function showGPSGuide() {
+      document.getElementById('gps-guide-text').innerHTML = _gpsGuideText();
+      document.getElementById('gps-guide').style.display = 'block';
+    }
+
+    function hideGPSGuide() {
+      document.getElementById('gps-guide').style.display = 'none';
+    }
+
+    // "다시 시도" 버튼 핸들러
+    function retryGPSPermission() {
+      hideGPSGuide();
+      _gpsPermDenied = false;
+      _gpsFailCount = 0;
+      startGPS();
+    }
 
     function startGPS() {
       if (!navigator.geolocation) {
         setGPSStatus('bad', 'GPS 미지원');
         return;
       }
+
+      // ── Chrome / 표준 Permissions API로 먼저 상태 확인 ──
+      if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then(result => {
+          if (result.state === 'denied') {
+            _gpsPermDenied = true;
+            setGPSStatus('bad', 'GPS 권한 거부됨');
+            showGPSGuide();
+            return;
+          }
+          _doWatchPosition();
+          // 권한 상태 변화 감지 (허용/거부 바뀌면 자동 반응)
+          result.onchange = () => {
+            if (result.state === 'granted') {
+              hideGPSGuide();
+              _gpsPermDenied = false;
+              startGPS();
+            } else if (result.state === 'denied') {
+              _gpsPermDenied = true;
+              setGPSStatus('bad', 'GPS 권한 거부됨');
+              showGPSGuide();
+            }
+          };
+        }).catch(() => _doWatchPosition()); // Permissions API 미지원 브라우저
+      } else {
+        _doWatchPosition();
+      }
+    }
+
+    function _doWatchPosition() {
       // 기존 watch 정리
       if (_gpsWatchId !== null) {
         navigator.geolocation.clearWatch(_gpsWatchId);
         _gpsWatchId = null;
       }
 
+      // 고정밀 실패 3회 이상 → 저정밀 모드로 전환 (크롬 데스크탑 대응)
+      const highAccuracy = _gpsFailCount < 3;
+
       _gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
-          clearTimeout(_gpsRetryTimer); // 성공 시 재시도 타이머 취소
+          clearTimeout(_gpsRetryTimer);
+          _gpsFailCount = 0; // 성공 시 초기화
+          hideGPSGuide();
+
           const { latitude: lat, longitude: lng, accuracy } = pos.coords;
 
-          // 정확도 500m 초과만 무시 (워밍업 중 200~300m 값도 지도에 표시)
+          // 정확도 500m 초과만 무시
           if (accuracy > 500) return;
 
           currentLocation = { lat, lng };
@@ -564,10 +663,9 @@
           else if (accuracy < 80)  setGPSStatus('ok',   `GPS ${acc}m`);
           else                     setGPSStatus('bad',  `GPS ${acc}m ⚠️`);
 
-          // 정확도가 충분할 때만 장소 감지 (너무 부정확하면 오탐 방지)
+          // 정확도가 충분할 때만 장소 감지
           if (accuracy > 120) return;
 
-          // 범위 안에 들어온 장소가 있으면 자동 팝업
           locations.forEach(loc => {
             if (!loc.enabled) return;
             const dist = getDistance(lat, lng, loc.lat, loc.lng);
@@ -582,7 +680,6 @@
             }
           });
 
-          // 열려있는 팝업 거리 업데이트
           if (activePopupLocationId) {
             const loc = locations.find(l => l.id === activePopupLocationId);
             if (loc) showLocationPopup(loc);
@@ -590,23 +687,30 @@
         },
         (err) => {
           console.warn('GPS error:', err.code, err.message);
+
           if (err.code === 1) {
-            // PERMISSION_DENIED: 권한 거부 → 재시도해도 소용없음
+            // PERMISSION_DENIED
+            _gpsPermDenied = true;
             setGPSStatus('bad', 'GPS 권한 거부됨');
+            showGPSGuide();
             return;
           }
-          // TIMEOUT / POSITION_UNAVAILABLE: 일시적 오류 → 10초 후 재시작
-          setGPSStatus('bad', 'GPS 재연결 중...');
+
+          // TIMEOUT(3) / POSITION_UNAVAILABLE(2)
+          _gpsFailCount++;
+          const modeLabel = highAccuracy ? '고정밀' : '저정밀';
+          setGPSStatus('bad', `GPS 재연결 중... (${modeLabel})`);
+
           clearTimeout(_gpsRetryTimer);
           _gpsRetryTimer = setTimeout(() => {
             setGPSStatus('bad', 'GPS 연결 중');
-            startGPS(); // watchPosition 재시작
-          }, 10000);
+            _doWatchPosition(); // 실패 횟수 누적되면 자동으로 저정밀 전환
+          }, 8000);
         },
         {
-          enableHighAccuracy: true,
-          timeout: 30000,   // iOS 초기 GPS 수신 최대 30초 허용 (기존 6초 → 타임아웃 빈발)
-          maximumAge: 30000 // 30초 이내 캐시 허용 (기존 0 → 매번 새 요청 강제로 타임아웃 유발)
+          enableHighAccuracy: highAccuracy,
+          timeout:    highAccuracy ? 30000 : 15000,
+          maximumAge: 30000
         }
       );
     }
@@ -615,7 +719,13 @@
     function listenParticipant() {
       if (!nickname) return;
       db.collection('participants').doc(nickname).onSnapshot(snap => {
-        if (!snap.exists) return;
+        if (!snap.exists) {
+          // 관리자가 이 계정을 삭제한 경우 → 홈으로 이동
+          clearNickname();
+          showToast('계정이 삭제됐어요. 다시 시작해주세요.');
+          setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+          return;
+        }
         participant = snap.data();
         document.getElementById('header-points').textContent = participant.points || 0;
         document.getElementById('header-name').textContent = nickname;
@@ -691,7 +801,8 @@
               const already = (snap.data()?.claimedMilestones || []).includes(key);
               if (already) return; // 트랜잭션 내에서 재확인
               tx.update(ref, {
-                points: firebase.firestore.FieldValue.increment(m.bonus),
+                points:       firebase.firestore.FieldValue.increment(m.bonus),
+                earnedPoints: firebase.firestore.FieldValue.increment(m.bonus),
                 claimedMilestones: firebase.firestore.FieldValue.arrayUnion(key)
               });
             });
@@ -861,6 +972,8 @@
     }
 
     function closeCommunity() {
+      // 키보드 먼저 내리기
+      if (document.activeElement) document.activeElement.blur();
       document.getElementById('community-panel').style.display = 'none';
       _chatOpen = false;
       // 다시 열 때 그룹핑 포함 fresh 렌더 보장
@@ -869,6 +982,12 @@
       // 참가자 목록 리스너만 해제 (50명 포인트 변화 때마다 재렌더 방지)
       if (_playersUnsubscribe) { _playersUnsubscribe(); _playersUnsubscribe = null; }
       // 채팅 리스너는 유지 → 패널 닫힌 동안 새 메시지 배지(!!) 감지
+      // iOS viewport 위치 초기화
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      });
     }
 
     function switchCommunityTab(tab) {
@@ -1067,9 +1186,7 @@
               font-size:15px;line-height:1.4;
               word-break:break-word;white-space:pre-wrap;
               box-shadow:0 1px 4px rgba(0,0,0,0.15);
-              display:inline-block;max-width:100%;">
-              ${escHtml(d.text)}
-            </div>`;
+              display:inline-block;max-width:100%;">${escHtml(d.text)}</div>`;
         } else {
           // ── 상대 메시지: 왼쪽 ──
           const color    = _nickColor(d.nickname);
@@ -1096,9 +1213,7 @@
                   font-size:15px;line-height:1.4;
                   word-break:break-word;white-space:pre-wrap;
                   box-shadow:0 1px 4px rgba(0,0,0,0.10);
-                  display:inline-block;">
-                  ${escHtml(d.text)}
-                </div>
+                  display:inline-block;">${escHtml(d.text)}</div>
                 ${isGroupLast
                   ? `<span style="font-size:10px;color:rgba(0,0,0,0.4);white-space:nowrap;padding-bottom:2px;flex-shrink:0;">${timeStr}</span>`
                   : ''}
@@ -1173,8 +1288,16 @@
     }
 
     function closeSendPoints() {
+      // 키보드 먼저 내리기 (포커스 해제)
+      if (document.activeElement) document.activeElement.blur();
       document.getElementById('send-overlay').style.display = 'none';
       document.getElementById('send-modal').style.display = 'none';
+      // iOS 키보드 내려간 후 viewport 위치 초기화
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      });
     }
 
     function onSendNicknameInput() {
@@ -1219,6 +1342,16 @@
         return;
       }
 
+      // ── 직접 번 포인트(earnedPoints) 잔액 확인 ──
+      const myEarned = participant.earnedPoints || 0;
+      if (amount > myEarned) {
+        const canSend = myEarned > 0
+          ? `퀴즈·QR로 직접 번 포인트(${myEarned}점)만 보낼 수 있어요`
+          : '퀴즈나 QR을 먼저 완료해야 보낼 수 있어요';
+        showToast(`⚠️ ${canSend}`);
+        return;
+      }
+
       const btn = document.getElementById('send-btn');
       btn.disabled = true;
       btn.textContent = '전송 중...';
@@ -1232,21 +1365,58 @@
           return;
         }
 
+        // ── 게임 전체 전송 한도 가져오기 (관리자 설정) ──
+        let maxTotalSend = Infinity;
+        try {
+          const cfg = await db.collection('config').doc('game').get();
+          if (cfg.exists && cfg.data().maxTotalSend > 0) {
+            maxTotalSend = cfg.data().maxTotalSend;
+          }
+        } catch(_) {}
+
         // Firestore 트랜잭션으로 원자적 처리
         await db.runTransaction(async tx => {
           const fromRef = db.collection('participants').doc(nickname);
           const toRef   = db.collection('participants').doc(toNick);
           const fromDoc = await tx.get(fromRef);
           if (!fromDoc.exists) throw new Error('sender_not_found');
-          if ((fromDoc.data().points || 0) < amount) throw new Error('insufficient');
-          tx.update(fromRef, { points: firebase.firestore.FieldValue.increment(-amount) });
-          tx.update(toRef,   { points: firebase.firestore.FieldValue.increment(amount)  });
+
+          const fData       = fromDoc.data();
+          const curPoints   = fData.points       || 0;
+          const curEarned   = fData.earnedPoints  || 0;
+          const totalSent   = fData.totalPointsSent || 0;
+
+          if (curPoints  < amount) throw new Error('insufficient');
+          if (curEarned  < amount) throw new Error('not_earned');
+          if (maxTotalSend !== Infinity && totalSent + amount > maxTotalSend)
+            throw new Error('limit_exceeded:' + (maxTotalSend - totalSent));
+
+          tx.update(fromRef, {
+            points:           firebase.firestore.FieldValue.increment(-amount),
+            earnedPoints:     firebase.firestore.FieldValue.increment(-amount),
+            totalPointsSent:  firebase.firestore.FieldValue.increment(amount),
+          });
+          tx.update(toRef, {
+            points: firebase.firestore.FieldValue.increment(amount),
+          });
+
+          // 전송 로그 기록
+          const logRef = db.collection('transfers').doc();
+          tx.set(logRef, {
+            from: nickname, to: toNick, amount,
+            sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
         });
 
         closeSendPoints();
         showToast(`✅ ${toNick}님에게 ${amount}점을 보냈어요!`);
       } catch(e) {
-        if (e.message === 'insufficient') showToast('포인트가 부족해요');
+        if (e.message === 'insufficient')       showToast('포인트가 부족해요');
+        else if (e.message === 'not_earned')    showToast('직접 번 포인트만 보낼 수 있어요');
+        else if (e.message?.startsWith('limit_exceeded')) {
+          const left = e.message.split(':')[1];
+          showToast(`전송 한도 초과! 앞으로 ${left}점만 더 보낼 수 있어요`);
+        }
         else if (e.message === 'sender_not_found') showToast('내 계정 정보를 찾을 수 없어요');
         else showToast('오류가 발생했어요. 다시 시도해주세요.');
       } finally {

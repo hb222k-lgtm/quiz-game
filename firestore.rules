@@ -56,5 +56,10 @@ service cloud.firestore {
     match /chat/{msgId} {
       allow read, write: if true;
     }
+
+    // 포인트 전송 로그
+    match /transfers/{transferId} {
+      allow read, write: if true;
+    }
   }
 }
