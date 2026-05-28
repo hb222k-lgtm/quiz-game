@@ -1553,8 +1553,8 @@
         }
         await batch.commit();
 
-        // 주문 등록 (수신자 이름으로)
-        await db.collection('orders').add({
+        // 주문 등록 (수신자 이름으로) — 실패 시 2초 후 재시도
+        const orderData = {
           nickname:    toNick,
           giftFrom:    nickname,
           isGift:      true,
@@ -1564,7 +1564,12 @@
           price:       price,
           confirmed:   false,
           purchasedAt: new Date().toISOString(),
-        });
+        };
+        try {
+          await db.collection('orders').add(orderData);
+        } catch (_) {
+          setTimeout(() => db.collection('orders').add(orderData).catch(() => {}), 2000);
+        }
 
         _selectedGiftItem = null;
         closeSendPoints();

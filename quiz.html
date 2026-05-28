@@ -188,14 +188,17 @@
     }
 
     let retryLoc = null, retryParticipant = null;
+    let _quizLoaded = false; // GPS fallback + GPS error 중복 호출 방지
 
     function retryGPS() {
       document.getElementById('gps-error').style.display = 'none';
+      _quizLoaded = false;
       if (retryLoc && retryParticipant) verifyGPSAndShowQuiz(retryLoc, retryParticipant);
     }
 
     function retryQuiz() {
       document.getElementById('quiz-error').style.display = 'none';
+      _quizLoaded = false;
       if (retryLoc && retryParticipant) loadQuiz(retryLoc, retryParticipant);
     }
 
@@ -247,6 +250,8 @@
     }
 
     async function loadQuiz(loc, participant) {
+      if (_quizLoaded) return;   // 중복 호출 방지
+      _quizLoaded = true;
       if (loc.quizMode === 'pool') {
         document.getElementById('quiz-loading').style.display = 'block';
         try {

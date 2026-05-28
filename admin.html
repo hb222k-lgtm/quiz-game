@@ -2035,7 +2035,7 @@ async function loadGiftLog() {
 
   const docs = snap.docs.map(d => d.data()).sort((a, b) =>
     (b.purchasedAt || '') < (a.purchasedAt || '') ? 1 : -1
-  ).reverse();
+  );
 
   el.innerHTML = docs.map(t => {
     const time = t.purchasedAt ? new Date(t.purchasedAt).toLocaleString('ko-KR') : '-';
