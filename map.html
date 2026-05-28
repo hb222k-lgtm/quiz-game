@@ -109,6 +109,36 @@
       padding: 15px; border: none;
       font-size: 15px; font-weight: 800; color: #fff; cursor: pointer;
     }
+
+    /* ── 순위 변동 알림 ── */
+    @keyframes rankIn {
+      from { transform: translateX(-50%) translateY(-130%); opacity: 0; }
+      to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+    }
+    @keyframes rankOut {
+      from { transform: translateX(-50%) translateY(0);     opacity: 1; }
+      to   { transform: translateX(-50%) translateY(-130%); opacity: 0; }
+    }
+    .rank-notif {
+      position: fixed;
+      top: 68px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 9500;
+      min-width: 220px; max-width: calc(100vw - 32px);
+      padding: 11px 20px 13px;
+      border-radius: 18px;
+      text-align: center;
+      font-weight: 800; font-size: 15px; line-height: 1.45;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+      animation: rankIn 0.45s cubic-bezier(0.34,1.56,0.64,1);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .rank-notif small { display: block; font-size: 12px; font-weight: 600; opacity: 0.8; margin-top: 2px; }
+    .rank-notif.gold    { background: linear-gradient(135deg,#fbbf24,#f59e0b); color: #1a0a38; }
+    .rank-notif.up      { background: linear-gradient(135deg,#7c3aed,#a855f7); color: #fff; }
+    .rank-notif.threat  { background: linear-gradient(135deg,#ef4444,#dc2626); color: #fff; }
+    .rank-notif.down    { background: linear-gradient(135deg,#64748b,#475569); color: #fff; }
   </style>
 </head>
 <body>
@@ -956,6 +986,94 @@
       } catch(e) { console.warn('최근 공지 확인 오류:', e); }
     }
 
+    // ── 순위 변동 알림 ──────────────────────────────
+    let _myRank        = null;   // null = 첫 로드 전
+    let _myRankPts     = null;
+    let _rankNotifEl   = null;
+    let _rankNotifHideTimer = null;
+    let _rankNotifCooldownUntil = 0;  // 스팸 방지 쿨다운
+
+    function showRankNotif(line1, line2, type) {
+      // 기존 알림 즉시 제거
+      if (_rankNotifEl) { _rankNotifEl.remove(); _rankNotifEl = null; }
+      clearTimeout(_rankNotifHideTimer);
+
+      const el = document.createElement('div');
+      el.className = 'rank-notif ' + type;
+      el.innerHTML = escHtml(line1) + (line2 ? `<small>${escHtml(line2)}</small>` : '');
+      document.body.appendChild(el);
+      _rankNotifEl = el;
+
+      if (navigator.vibrate)
+        navigator.vibrate(type === 'gold' ? [150,80,150,80,200] : [100,60,100]);
+
+      _rankNotifHideTimer = setTimeout(() => {
+        if (_rankNotifEl === el) {
+          el.style.animation = 'rankOut 0.35s ease forwards';
+          setTimeout(() => { if (_rankNotifEl === el) { el.remove(); _rankNotifEl = null; } }, 350);
+        }
+      }, 3800);
+    }
+
+    function startRankListener() {
+      db.collection('participants').onSnapshot(snap => {
+        const all = snap.docs
+          .map(d => ({ nick: d.id, points: d.data().points || 0 }))
+          .sort((a, b) => b.points - a.points);
+
+        const myIdx  = all.findIndex(p => p.nick === nickname);
+        if (myIdx === -1) return;
+
+        const newRank   = myIdx + 1;
+        const newPoints = all[myIdx].points;
+        const total     = all.length;
+
+        // 첫 로드: 초기값만 저장, 알림 없음
+        if (_myRank === null) {
+          _myRank = newRank; _myRankPts = newPoints; return;
+        }
+
+        // 내 포인트 변화 없으면 무시 (타인 변화로 인한 스냅샷)
+        if (newPoints === _myRankPts) { _myRank = newRank; return; }
+
+        const prevRank  = _myRank;
+        const prevPts   = _myRankPts;
+        _myRank   = newRank;
+        _myRankPts = newPoints;
+
+        const now = Date.now();
+        if (now < _rankNotifCooldownUntil) return;  // 쿨다운 중
+
+        if (newRank < prevRank) {
+          // 순위 상승 🎉
+          _rankNotifCooldownUntil = now + 8000;
+          if (newRank === 1) {
+            showRankNotif('🥇 1등이에요!', `${total}명 중 1위 달성!`, 'gold');
+          } else {
+            showRankNotif(`⬆️ ${prevRank}위 → ${newRank}위`, '순위가 올라갔어요!', 'up');
+          }
+        } else if (newRank > prevRank) {
+          // 순위 하락 💪
+          _rankNotifCooldownUntil = now + 20000;  // 하락 알림은 더 긴 쿨다운
+          showRankNotif(`💪 ${prevRank}위 → ${newRank}위`, '더 올라갈 수 있어요!', 'down');
+        }
+
+        // 1등 수성 중 & 2등이 30점 이내로 추격 중 → 위협 알림
+        if (newRank === 1 && total >= 2) {
+          const gap = newPoints - (all[1]?.points || 0);
+          if (gap > 0 && gap <= 30 && now >= _rankNotifCooldownUntil) {
+            const chaser = all[1].nick;
+            setTimeout(() => {
+              if (_myRank === 1) {
+                showRankNotif(`👑 ${chaser}님이 ${gap}점 차!`, '1등 자리를 지켜요!', 'threat');
+                _rankNotifCooldownUntil = Date.now() + 30000;
+              }
+            }, 4200);
+          }
+        }
+      });
+    }
+
     // ── 초기화 ────────────────────────────────────
     document.getElementById('header-name').textContent = nickname;
 
@@ -973,6 +1091,7 @@
       // loadLocations 먼저 완료 후 listenParticipant → 진행도 "N/0곳" 표시 방지
       loadLocations().then(() => listenParticipant());
       loadMilestones();
+      startRankListener();   // 순위 변동 알림
       requestNotifPermission();
       listenAnnouncements();
       checkRecentAnnouncement();
