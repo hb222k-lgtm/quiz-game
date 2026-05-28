@@ -821,6 +821,8 @@
     let _playersUnsubscribe = null;
     let _chatOpen = false;
     let _chatHasNew = false;
+    let _chatKnownCount = 0;   // 배지 판단용 메시지 카운트
+    let _lastChatSnap = null;  // 탭 전환 시 재렌더용 캐시
 
     const RANK_MEDAL = ['🥇','🥈','🥉'];
 
@@ -839,9 +841,9 @@
       // 다시 열 때 그룹핑 포함 fresh 렌더 보장
       const el = document.getElementById('chat-messages');
       delete el.dataset.rendered;
-      // 50명 동시 접속 시 불필요한 Firestore 리스너 해제 (패널 닫으면 중단)
-      if (_chatUnsubscribe)    { _chatUnsubscribe();    _chatUnsubscribe    = null; }
+      // 참가자 목록 리스너만 해제 (50명 포인트 변화 때마다 재렌더 방지)
       if (_playersUnsubscribe) { _playersUnsubscribe(); _playersUnsubscribe = null; }
+      // 채팅 리스너는 유지 → 패널 닫힌 동안 새 메시지 배지(!!) 감지
     }
 
     function switchCommunityTab(tab) {
@@ -867,6 +869,8 @@
       if (tab === 'chat') {
         document.getElementById('chat-badge').style.display = 'none';
         _chatHasNew = false;
+        // 캐시된 스냅샷으로 즉시 렌더 (Firestore 업데이트 없어도 보임)
+        if (_lastChatSnap) renderChat(_lastChatSnap);
         setTimeout(() => scrollChatBottom(true), 50);
         setTimeout(() => document.getElementById('chat-input').focus(), 100);
       }
@@ -881,7 +885,22 @@
         _chatUnsubscribe = db.collection('chat')
           .orderBy('sentAt', 'asc')
           .limitToLast(200)
-          .onSnapshot(snap => renderChat(snap));
+          .onSnapshot(snap => {
+            _lastChatSnap = snap; // 항상 최신 스냅샷 캐시
+            const newCount = snap.docs.length;
+
+            if (_chatOpen) {
+              // 채팅 탭 열림: 전체 렌더
+              renderChat(snap);
+            } else {
+              // 채팅 탭 닫힘: 배지만 업데이트
+              if (newCount > _chatKnownCount && _chatKnownCount > 0) {
+                _chatHasNew = true;
+                document.getElementById('chat-badge').style.display = 'block';
+              }
+            }
+            _chatKnownCount = newCount;
+          });
       }
     }
 
@@ -900,8 +919,9 @@
         const isMe = p.nick === nickname;
         const medal = RANK_MEDAL[i] || `<span style="font-size:13px;font-weight:800;color:#64748b;">${i+1}</span>`;
         const sendBtn = !isMe
-          ? `<button onclick="event.stopPropagation();openSendPoints('${escHtml(p.nick)}')" style="
-              flex-shrink:0; padding:6px 10px;
+          ? `<button data-nick="${escHtml(p.nick)}"
+              onclick="event.stopPropagation();openSendPoints(this.dataset.nick)"
+              style="flex-shrink:0; padding:6px 10px;
               background:linear-gradient(135deg,#7c3aed,#a855f7);
               color:#fff; border:none; border-radius:10px;
               font-size:12px; font-weight:700; cursor:pointer;
@@ -909,15 +929,15 @@
               💌 보내기
             </button>`
           : '';
-        return `<div onclick="${!isMe ? `openSendPoints('${escHtml(p.nick)}')` : ''}"
+        return `<div data-nick="${escHtml(p.nick)}"
+          onclick="${!isMe ? 'openSendPoints(this.dataset.nick)' : ''}"
           style="
           background:${isMe ? 'linear-gradient(135deg,#ede9fe,#faf5ff)' : '#fff'};
           border:${isMe ? '2px solid #a78bfa' : '1.5px solid #e2e8f0'};
           border-radius:14px; padding:12px 14px;
           display:flex; align-items:center; gap:12px;
           cursor:${!isMe ? 'pointer' : 'default'};
-          transition: transform 0.1s, box-shadow 0.1s;
-          ${!isMe ? 'active-transform:scale(0.98);' : ''}
+          transition: transform 0.12s, box-shadow 0.12s;
           ">
           <div style="width:32px;text-align:center;font-size:${i<3?'22':'14'}px;flex-shrink:0;">${medal}</div>
           <div style="flex:1;min-width:0;">
@@ -969,15 +989,6 @@
       }
 
       el.dataset.rendered = '1';
-
-      // 새 메시지 뱃지 체크 (렌더 전)
-      const prevCount = parseInt(el.dataset.msgCount || '0');
-      const newCount  = snap.docs.length;
-      if (!_chatOpen && newCount > prevCount && prevCount > 0) {
-        _chatHasNew = true;
-        document.getElementById('chat-badge').style.display = 'block';
-      }
-      el.dataset.msgCount = String(newCount);
 
       // 전체 재렌더 (그룹핑을 위해 항상)
       el.innerHTML = '';
@@ -1089,7 +1100,9 @@
     }
 
     function escHtml(str) {
-      return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return (str||'')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     async function sendChat() {
@@ -1199,6 +1212,7 @@
           const fromRef = db.collection('participants').doc(nickname);
           const toRef   = db.collection('participants').doc(toNick);
           const fromDoc = await tx.get(fromRef);
+          if (!fromDoc.exists) throw new Error('sender_not_found');
           if ((fromDoc.data().points || 0) < amount) throw new Error('insufficient');
           tx.update(fromRef, { points: firebase.firestore.FieldValue.increment(-amount) });
           tx.update(toRef,   { points: firebase.firestore.FieldValue.increment(amount)  });
@@ -1208,6 +1222,7 @@
         showToast(`✅ ${toNick}님에게 ${amount}점을 보냈어요!`);
       } catch(e) {
         if (e.message === 'insufficient') showToast('포인트가 부족해요');
+        else if (e.message === 'sender_not_found') showToast('내 계정 정보를 찾을 수 없어요');
         else showToast('오류가 발생했어요. 다시 시도해주세요.');
       } finally {
         btn.disabled = false;
