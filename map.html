@@ -1348,7 +1348,7 @@
       btn.textContent = '전송 중...';
 
       try {
-        // 수신자 존재 여부 재확인
+        // 수신자 존재 여부 확인
         const toSnap = await db.collection('participants').doc(toNick).get();
         if (!toSnap.exists) {
           showToast('존재하지 않는 닉네임이에요');
@@ -1356,25 +1356,23 @@
           return;
         }
 
-        // Firestore 트랜잭션: 포인트 이동만 처리
-        await db.runTransaction(async tx => {
-          const fromRef = db.collection('participants').doc(nickname);
-          const toRef   = db.collection('participants').doc(toNick);
-          const fromDoc = await tx.get(fromRef);
-          if (!fromDoc.exists) throw new Error('sender_not_found');
+        // 보내는 사람 최신 포인트 재확인
+        const fromSnap = await db.collection('participants').doc(nickname).get();
+        if (!fromSnap.exists) throw new Error('sender_not_found');
+        const curPoints = fromSnap.data().points || 0;
+        if (curPoints < amount) throw new Error('insufficient');
 
-          const curPoints = fromDoc.data().points || 0;
-          if (curPoints < amount) throw new Error('insufficient');
-
-          tx.update(fromRef, {
-            points: firebase.firestore.FieldValue.increment(-amount),
-          });
-          tx.update(toRef, {
-            points: firebase.firestore.FieldValue.increment(amount),
-          });
+        // 포인트 이동 (배치 쓰기 - 카카오톡 브라우저 호환)
+        const batch = db.batch();
+        batch.update(db.collection('participants').doc(nickname), {
+          points: firebase.firestore.FieldValue.increment(-amount),
         });
+        batch.update(db.collection('participants').doc(toNick), {
+          points: firebase.firestore.FieldValue.increment(amount),
+        });
+        await batch.commit();
 
-        // 전송 로그는 트랜잭션 밖에서 별도 기록 (실패해도 전송은 성공)
+        // 전송 로그 (실패해도 무시)
         db.collection('transfers').add({
           from: nickname, to: toNick, amount,
           sentAt: firebase.firestore.FieldValue.serverTimestamp(),
