@@ -81,9 +81,16 @@
 
 <!-- 관리자 메인 -->
 <div id="admin-main" style="display:none;" class="full-page">
-  <div class="admin-header">
+  <div class="admin-header" style="position:relative;">
     <h1>🗺️ 관리자 대시보드</h1>
     <p id="admin-subtitle">실시간 업데이트 중</p>
+    <button onclick="adminLogout()" style="
+      position:absolute; top:0; right:0;
+      background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2);
+      color:#c4b5fd; border-radius:10px; padding:6px 12px;
+      font-size:12px; font-weight:700; cursor:pointer;">
+      🔓 로그아웃
+    </button>
   </div>
 
   <!-- 탭 -->
@@ -675,7 +682,7 @@
 function adminLogin() {
   const pw = document.getElementById('pw-input').value;
   if (pw === GAME_CONFIG.ADMIN_PASSWORD) {
-    sessionStorage.setItem('adminAuth', '1');
+    localStorage.setItem('adminAuth', '1');
     showAdminMain();
   } else {
     showToast('비밀번호가 틀렸어요');
@@ -688,8 +695,15 @@ function showAdminMain() {
   initAdmin();
 }
 
-// 이미 로그인한 세션이면 바로 진입
-if (sessionStorage.getItem('adminAuth') === '1') {
+function adminLogout() {
+  localStorage.removeItem('adminAuth');
+  document.getElementById('admin-main').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'block';
+  document.getElementById('pw-input').value = '';
+}
+
+// 이미 로그인 상태면 바로 진입 (북마크 포함)
+if (localStorage.getItem('adminAuth') === '1') {
   showAdminMain();
 }
 document.getElementById('pw-input').addEventListener('keydown', e => {
