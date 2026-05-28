@@ -82,7 +82,7 @@
 <!-- 관리자 메인 -->
 <div id="admin-main" style="display:none;" class="full-page">
   <div class="admin-header" style="position:relative;">
-    <h1 id="admin-title-tap">🗺️ 관리자 대시보드</h1>
+    <h1>🗺️ 관리자 대시보드</h1>
     <p id="admin-subtitle">실시간 업데이트 중</p>
     <button onclick="adminLogout()" style="
       position:absolute; top:0; right:0;
@@ -91,6 +91,11 @@
       font-size:12px; font-weight:700; cursor:pointer;">
       🔓 로그아웃
     </button>
+    <!-- 열쇠 아이콘 5번 탭 → 일반 모드 -->
+    <span id="admin-key-tap" style="
+      position:absolute; bottom:0; left:0;
+      font-size:18px; opacity:0.25; cursor:pointer;
+      -webkit-tap-highlight-color:transparent; user-select:none;">🔐</span>
   </div>
 
   <!-- 탭 -->
@@ -759,7 +764,7 @@ function adminLogout() {
 // 제목 5번 탭 → 일반 모드(index.html)로 이동
 (function(){
   let _tapCount = 0, _tapTimer = null;
-  const el = document.getElementById('admin-title-tap');
+  const el = document.getElementById('admin-key-tap');
   if (!el) return;
   el.addEventListener('click', function() {
     _tapCount++;
