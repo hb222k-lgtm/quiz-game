@@ -91,10 +91,11 @@
       font-size:12px; font-weight:700; cursor:pointer;">
       🔓 로그아웃
     </button>
-    <!-- 열쇠 아이콘 5번 탭 → 일반 모드 -->
-    <span id="admin-key-tap" style="
+    <!-- 열쇠 아이콘 탭 → 일반 모드 -->
+    <span onclick="window.location.href='index.html'" style="
       position:absolute; bottom:0; left:0;
-      font-size:18px; opacity:0.25; cursor:pointer;
+      font-size:22px; opacity:0.3; cursor:pointer;
+      padding:8px; margin:-8px;
       -webkit-tap-highlight-color:transparent; user-select:none;">🔐</span>
   </div>
 
@@ -773,22 +774,6 @@ function adminLogout() {
   document.getElementById('pw-input').value = '';
 }
 
-// 제목 5번 탭 → 일반 모드(index.html)로 이동
-(function(){
-  let _tapCount = 0, _tapTimer = null;
-  const el = document.getElementById('admin-key-tap');
-  if (!el) return;
-  el.addEventListener('click', function() {
-    _tapCount++;
-    clearTimeout(_tapTimer);
-    if (_tapCount >= 5) {
-      _tapCount = 0;
-      window.location.href = 'index.html';
-    } else {
-      _tapTimer = setTimeout(function(){ _tapCount = 0; }, 1500);
-    }
-  });
-})();
 
 // 이미 로그인 상태면 바로 진입 (북마크 포함)
 if (localStorage.getItem('adminAuth') === '1') {
