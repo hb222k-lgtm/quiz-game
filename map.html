@@ -534,27 +534,38 @@
     }
 
     // ── GPS 감시 ──────────────────────────────────
+    let _gpsWatchId = null;
+    let _gpsRetryTimer = null;
+
     function startGPS() {
       if (!navigator.geolocation) {
         setGPSStatus('bad', 'GPS 미지원');
         return;
       }
+      // 기존 watch 정리
+      if (_gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = null;
+      }
 
-      navigator.geolocation.watchPosition(
+      _gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
+          clearTimeout(_gpsRetryTimer); // 성공 시 재시도 타이머 취소
           const { latitude: lat, longitude: lng, accuracy } = pos.coords;
 
-          // 정확도 150m 초과는 무시 (실내 Wi-Fi 위치 등 너무 부정확한 값)
-          if (accuracy > 150) return;
+          // 정확도 500m 초과만 무시 (워밍업 중 200~300m 값도 지도에 표시)
+          if (accuracy > 500) return;
 
           currentLocation = { lat, lng };
-
           updateUserMarker(lat, lng, accuracy);
 
           const acc = Math.round(accuracy);
-          if (accuracy < 20)      setGPSStatus('good', `GPS ${acc}m`);
-          else if (accuracy < 60) setGPSStatus('ok',   `GPS ${acc}m`);
-          else                    setGPSStatus('bad',  `GPS ${acc}m`);
+          if (accuracy < 20)       setGPSStatus('good', `GPS ${acc}m`);
+          else if (accuracy < 80)  setGPSStatus('ok',   `GPS ${acc}m`);
+          else                     setGPSStatus('bad',  `GPS ${acc}m ⚠️`);
+
+          // 정확도가 충분할 때만 장소 감지 (너무 부정확하면 오탐 방지)
+          if (accuracy > 120) return;
 
           // 범위 안에 들어온 장소가 있으면 자동 팝업
           locations.forEach(loc => {
@@ -567,7 +578,6 @@
                 showLocationPopup(loc);
               }
             } else {
-              // 범위 벗어나면 dismissed 초기화 → 다시 들어올 때 재표시
               dismissedPopups.delete(loc.id);
             }
           });
@@ -579,10 +589,25 @@
           }
         },
         (err) => {
-          setGPSStatus('bad', 'GPS 오류');
-          console.warn('GPS error:', err);
+          console.warn('GPS error:', err.code, err.message);
+          if (err.code === 1) {
+            // PERMISSION_DENIED: 권한 거부 → 재시도해도 소용없음
+            setGPSStatus('bad', 'GPS 권한 거부됨');
+            return;
+          }
+          // TIMEOUT / POSITION_UNAVAILABLE: 일시적 오류 → 10초 후 재시작
+          setGPSStatus('bad', 'GPS 재연결 중...');
+          clearTimeout(_gpsRetryTimer);
+          _gpsRetryTimer = setTimeout(() => {
+            setGPSStatus('bad', 'GPS 연결 중');
+            startGPS(); // watchPosition 재시작
+          }, 10000);
         },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+        {
+          enableHighAccuracy: true,
+          timeout: 30000,   // iOS 초기 GPS 수신 최대 30초 허용 (기존 6초 → 타임아웃 빈발)
+          maximumAge: 30000 // 30초 이내 캐시 허용 (기존 0 → 매번 새 요청 강제로 타임아웃 유발)
+        }
       );
     }
 

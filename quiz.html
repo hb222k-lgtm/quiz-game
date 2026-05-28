@@ -223,10 +223,10 @@
         (pos) => {
           clearTimeout(fallbackTimer);
           document.getElementById('quiz-loading').style.display = 'none';
-          const dist = Math.round(getDistance(
-            pos.coords.latitude, pos.coords.longitude,
-            loc.lat, loc.lng
-          ));
+          const { latitude, longitude, accuracy } = pos.coords;
+          // 정확도 200m 초과면 GPS 불신뢰 → 그냥 통과 (막으면 안 풀림)
+          if (accuracy > 200) { loadQuiz(loc, participant); return; }
+          const dist = Math.round(getDistance(latitude, longitude, loc.lat, loc.lng));
           if (dist <= GAME_CONFIG.LOCATION_RADIUS) {
             loadQuiz(loc, participant);
           } else {
@@ -236,11 +236,12 @@
           }
         },
         () => {
+          // GPS 오류 → 통과 (막으면 퀴즈 자체를 못 풀게 됨)
           clearTimeout(fallbackTimer);
           document.getElementById('quiz-loading').style.display = 'none';
           loadQuiz(loc, participant);
         },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
       );
     }
 
