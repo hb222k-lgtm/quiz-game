@@ -1328,6 +1328,8 @@
     function openSendPoints(toNick = '') {
       switchSendTab('points');
       document.getElementById('send-to').value = toNick;
+      document.getElementById('gift-to').value = toNick;   // 선물 탭도 자동 입력
+      document.getElementById('gift-to-status').textContent = '';
       document.getElementById('send-amount').value = '';
       document.getElementById('send-to-status').textContent = '';
       document.getElementById('send-my-points').textContent = participant.points || 0;
