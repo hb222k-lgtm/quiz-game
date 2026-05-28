@@ -1944,30 +1944,49 @@ async function loadTransferLog() {
   const el = document.getElementById('transfer-log-list');
   if (!el) return;
   el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:8px;">불러오는 중...</p>';
+
+  let snap;
   try {
-    const snap = await db.collection('transfers')
+    // orderBy sentAt 시도 (인덱스 있을 때)
+    snap = await db.collection('transfers')
       .orderBy('sentAt', 'desc').limit(50).get();
-    if (snap.empty) {
+  } catch(_) {
+    try {
+      // 인덱스 없으면 정렬 없이 조회 후 JS에서 정렬
+      snap = await db.collection('transfers').limit(50).get();
+    } catch(e2) {
       el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:12px;">전송 내역이 없어요</p>';
       return;
     }
-    el.innerHTML = snap.docs.map(d => {
-      const t = d.data();
-      const time = t.sentAt ? new Date(t.sentAt.toDate()).toLocaleString('ko-KR') : '-';
-      return `
-        <div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
-          <div style="flex:1;">
-            <span style="font-weight:700;">${escHtml(t.from)}</span>
-            <span style="color:#94a3b8;margin:0 4px;">→</span>
-            <span style="font-weight:700;">${escHtml(t.to)}</span>
-          </div>
-          <div style="font-weight:800;color:#7c3aed;white-space:nowrap;">+${t.amount}점</div>
-          <div style="font-size:11px;color:#94a3b8;white-space:nowrap;">${time}</div>
-        </div>`;
-    }).join('');
-  } catch(e) {
-    el.innerHTML = `<p style="font-size:13px;color:#ef4444;text-align:center;">오류: ${e.message}</p>`;
   }
+
+  if (!snap || snap.empty) {
+    el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:12px;">전송 내역이 없어요</p>';
+    return;
+  }
+
+  // JS에서 시간순 정렬
+  const docs = snap.docs
+    .map(d => d.data())
+    .sort((a, b) => {
+      const ta = a.sentAt?.toDate?.() || new Date(0);
+      const tb = b.sentAt?.toDate?.() || new Date(0);
+      return tb - ta;
+    });
+
+  el.innerHTML = docs.map(t => {
+    const time = t.sentAt?.toDate ? t.sentAt.toDate().toLocaleString('ko-KR') : '-';
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
+        <div style="flex:1;">
+          <span style="font-weight:700;">${escHtml(t.from || '')}</span>
+          <span style="color:#94a3b8;margin:0 4px;">→</span>
+          <span style="font-weight:700;">${escHtml(t.to || '')}</span>
+        </div>
+        <div style="font-weight:800;color:#7c3aed;white-space:nowrap;">+${t.amount}점</div>
+        <div style="font-size:11px;color:#94a3b8;white-space:nowrap;">${time}</div>
+      </div>`;
+  }).join('');
 }
 
 async function saveGamePeriod() {

@@ -1356,7 +1356,7 @@
           return;
         }
 
-        // Firestore 트랜잭션으로 원자적 처리
+        // Firestore 트랜잭션: 포인트 이동만 처리
         await db.runTransaction(async tx => {
           const fromRef = db.collection('participants').doc(nickname);
           const toRef   = db.collection('participants').doc(toNick);
@@ -1372,14 +1372,13 @@
           tx.update(toRef, {
             points: firebase.firestore.FieldValue.increment(amount),
           });
-
-          // 전송 로그 기록
-          const logRef = db.collection('transfers').doc();
-          tx.set(logRef, {
-            from: nickname, to: toNick, amount,
-            sentAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
         });
+
+        // 전송 로그는 트랜잭션 밖에서 별도 기록 (실패해도 전송은 성공)
+        db.collection('transfers').add({
+          from: nickname, to: toNick, amount,
+          sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(() => {});
 
         closeSendPoints();
         showToast(`✅ ${toNick}님에게 ${amount}점을 보냈어요!`);
