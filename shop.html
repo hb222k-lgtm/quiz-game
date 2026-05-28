@@ -202,34 +202,41 @@
       }
       el.innerHTML = myOrders.map(o => {
         const time = o.purchasedAt ? new Date(o.purchasedAt).toLocaleString('ko-KR') : '';
+        const isGift = o.isGift && o.giftFrom;
+        const giftLabel = isGift
+          ? `<span style="font-size:11px; background:#fdf4ff; color:#a855f7; padding:2px 8px; border-radius:10px; font-weight:600; margin-right:4px;">🎁 ${escHtml(o.giftFrom)}님의 선물</span>`
+          : '';
+
         if (o.confirmed) {
           return `
             <div class="purchase-row">
               <div>
                 <div class="item-n">${o.emoji || '🎁'} ${escHtml(o.itemName)}</div>
-                <div style="margin-top:3px;">
+                <div style="margin-top:3px; display:flex; flex-wrap:wrap; gap:4px;">
+                  ${giftLabel}
                   <span style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:10px; font-weight:600;">✅ 수령 완료</span>
                 </div>
                 <div style="font-size:12px; color:#94a3b8; margin-top:2px;">${time}</div>
               </div>
-              <div class="item-p">-${o.price}점</div>
+              <div class="item-p">${isGift ? '선물' : `-${o.price}점`}</div>
             </div>`;
         } else {
           return `
-            <div class="purchase-row" style="border-left:3px solid #f59e0b; padding-left:13px;">
+            <div class="purchase-row" style="border-left:3px solid ${isGift ? '#a855f7' : '#f59e0b'}; padding-left:13px;">
               <div style="flex:1;">
                 <div class="item-n">${o.emoji || '🎁'} ${escHtml(o.itemName)}</div>
-                <div style="margin-top:3px;">
+                <div style="margin-top:3px; display:flex; flex-wrap:wrap; gap:4px;">
+                  ${giftLabel}
                   <span style="font-size:11px; background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:10px; font-weight:600;">🕐 수령 대기</span>
                 </div>
                 <div style="font-size:12px; color:#94a3b8; margin-top:2px;">${time}</div>
-                <button onclick="confirmReceived('${o.id}')"
+                <button data-order-id="${o.id}" onclick="confirmReceived(this.dataset.orderId)"
                   style="margin-top:8px; background:#7c3aed; color:#fff; border:none; border-radius:8px;
                          padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; display:block;">
                   ✅ 수령 완료
                 </button>
               </div>
-              <div class="item-p">-${o.price}점</div>
+              <div class="item-p">${isGift ? '선물' : `-${o.price}점`}</div>
             </div>`;
         }
       }).join('');
