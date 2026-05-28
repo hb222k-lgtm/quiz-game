@@ -651,19 +651,33 @@
       } catch (e) {}
     }
 
+    // 보너스 구간 중복 지급 방지: 처리 중인 milestone key 추적
+    const _milestonePending = new Set();
+
     async function checkBonusMilestones(pts, claimed) {
       if (!_bonusMilestones.length) return;
       const claimedSet = new Set(claimed || []);
       for (const m of _bonusMilestones) {
         const key = `ms_${m.threshold}`;
-        if (pts >= m.threshold && !claimedSet.has(key)) {
+        // claimedSet 에 있거나 현재 처리 중이면 건너뜀 (레이스 컨디션 방지)
+        if (pts >= m.threshold && !claimedSet.has(key) && !_milestonePending.has(key)) {
+          _milestonePending.add(key);
           try {
-            await db.collection('participants').doc(nickname).update({
-              points: firebase.firestore.FieldValue.increment(m.bonus),
-              claimedMilestones: firebase.firestore.FieldValue.arrayUnion(key)
+            await db.runTransaction(async tx => {
+              const ref  = db.collection('participants').doc(nickname);
+              const snap = await tx.get(ref);
+              const already = (snap.data()?.claimedMilestones || []).includes(key);
+              if (already) return; // 트랜잭션 내에서 재확인
+              tx.update(ref, {
+                points: firebase.firestore.FieldValue.increment(m.bonus),
+                claimedMilestones: firebase.firestore.FieldValue.arrayUnion(key)
+              });
             });
             showToast(`🎁 ${m.threshold}점 달성! 보너스 +${m.bonus}점 지급!`);
-          } catch (e) {}
+          } catch (e) {
+            // 실패 시 다음 snapshot 에서 재시도할 수 있도록 pending 에서 제거
+            _milestonePending.delete(key);
+          }
         }
       }
     }
@@ -767,10 +781,6 @@
       } catch(e) { console.warn('최근 공지 확인 오류:', e); }
     }
 
-    function escHtml(s) {
-      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
     // ── 초기화 ────────────────────────────────────
     document.getElementById('header-name').textContent = nickname;
 
@@ -832,6 +842,9 @@
       // 다시 열 때 그룹핑 포함 fresh 렌더 보장
       const el = document.getElementById('chat-messages');
       delete el.dataset.rendered;
+      // 50명 동시 접속 시 불필요한 Firestore 리스너 해제 (패널 닫으면 중단)
+      if (_chatUnsubscribe)    { _chatUnsubscribe();    _chatUnsubscribe    = null; }
+      if (_playersUnsubscribe) { _playersUnsubscribe(); _playersUnsubscribe = null; }
     }
 
     function switchCommunityTab(tab) {
@@ -870,7 +883,7 @@
       if (!_chatUnsubscribe) {
         _chatUnsubscribe = db.collection('chat')
           .orderBy('sentAt', 'asc')
-          .limitToLast(100)
+          .limitToLast(200)
           .onSnapshot(snap => renderChat(snap));
       }
     }
@@ -921,12 +934,12 @@
 
     function _sameMinute(a, b) {
       if (!a?.sentAt?.toDate || !b?.sentAt?.toDate) return false;
-      const da = a.sentAt.toDate(), db = b.sentAt.toDate();
-      return da.getFullYear() === db.getFullYear() &&
-             da.getMonth()    === db.getMonth()    &&
-             da.getDate()     === db.getDate()     &&
-             da.getHours()    === db.getHours()    &&
-             da.getMinutes()  === db.getMinutes();
+      const da = a.sentAt.toDate(), dateB = b.sentAt.toDate(); // ※ 'db' 는 Firestore 전역변수와 충돌하므로 dateB 사용
+      return da.getFullYear() === dateB.getFullYear() &&
+             da.getMonth()    === dateB.getMonth()    &&
+             da.getDate()     === dateB.getDate()     &&
+             da.getHours()    === dateB.getHours()    &&
+             da.getMinutes()  === dateB.getMinutes();
     }
 
     function _chatDateStr(date) {
@@ -1060,7 +1073,8 @@
     }
 
     function _chatTimeStr(date) {
-      const h = date.getHours(), m = String(date.getMinutes()).padStart(2,'0');
+      const h = String(date.getHours()).padStart(2,'0');
+      const m = String(date.getMinutes()).padStart(2,'0');
       return `${h}:${m}`;
     }
 

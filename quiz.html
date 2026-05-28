@@ -173,7 +173,7 @@
         if ((participant.completedLocations || []).includes(locId)) {
           document.getElementById('already-done').style.display = 'block';
           document.getElementById('done-points-msg').textContent =
-            `이 장소에서 ${locationData.quiz?.points || 0}점을 이미 획득했어요.`;
+            `이 장소 퀴즈를 이미 완료했어요. (최대 ${locationData.quiz?.points || 0}점)`;
           return;
         }
 
