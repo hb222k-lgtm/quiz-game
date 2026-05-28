@@ -116,7 +116,7 @@
     <div class="map-header">
       <div>
         <div class="nickname" id="header-name">로딩 중...</div>
-        <div style="font-size:12px; color:#64748b" id="header-progress"></div>
+        <div style="font-size:12px; color:rgba(196,181,253,0.7); font-weight:600;" id="header-progress"></div>
       </div>
       <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
     </div>
@@ -132,9 +132,10 @@
       <div id="compass-btn" onclick="requestCompassPermission()" style="
         display:none; position:absolute; bottom:16px; left:50%;
         transform:translateX(-50%); z-index:500;
-        background:#fff; border-radius:20px; padding:8px 16px;
-        box-shadow:0 2px 12px rgba(0,0,0,0.2);
-        font-size:13px; font-weight:600; cursor:pointer;
+        background:rgba(13,7,32,0.82); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+        border:1px solid rgba(167,139,250,0.3); border-radius:99px; padding:9px 18px;
+        box-shadow:0 4px 20px rgba(0,0,0,0.4), 0 0 12px rgba(124,58,237,0.3);
+        font-size:13px; font-weight:700; cursor:pointer; color:#e9d5ff;
         white-space:nowrap;">
         🧭 나침반 켜기 (탭)
       </div>

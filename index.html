@@ -16,8 +16,26 @@
   <link rel="dns-prefetch" href="https://firestore.googleapis.com">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    body { background: linear-gradient(160deg, #f3f0ff 0%, #ede9fe 40%, #fdf2ff 100%); min-height: 100vh; }
-    .page { padding-top: 0; }
+    body {
+      background: linear-gradient(160deg, #0d0720 0%, #1a0a35 30%, #2d1060 60%, #1a0535 100%);
+      min-height: 100vh;
+    }
+    /* 배경 오브 효과 */
+    body::before {
+      content: '';
+      position: fixed; top: -20vh; left: -20vw;
+      width: 70vw; height: 70vw; max-width: 500px; max-height: 500px;
+      background: radial-gradient(circle, rgba(168,85,247,0.25) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed; bottom: -10vh; right: -10vw;
+      width: 60vw; height: 60vw; max-width: 400px; max-height: 400px;
+      background: radial-gradient(circle, rgba(236,72,153,0.18) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+    .page { padding-top: 0; position: relative; z-index: 1; }
     .hero { padding: 60px 0 32px; }
     .info-chips {
       display: flex; flex-direction: row; gap: 8px;
@@ -29,20 +47,30 @@
     .info-chips::-webkit-scrollbar { display: none; }
     .chip {
       display: flex; flex-direction: column; align-items: center; gap: 6px;
-      flex: 1; min-width: 88px;
-      padding: 14px 8px 12px;
-      border-radius: 16px;
+      flex: 1; min-width: 78px;
+      padding: 14px 6px 12px;
+      border-radius: 18px;
       text-align: center;
       font-size: 11px; font-weight: 700; line-height: 1.35;
-      border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
-    .chip span { font-size: 26px; line-height: 1; margin-bottom: 2px; }
-    .chip.c1 { background: linear-gradient(145deg,#fde68a,#fbbf24); color: #78350f; }
-    .chip.c2 { background: linear-gradient(145deg,#a5f3fc,#38bdf8); color: #0c4a6e; }
-    .chip.c3 { background: linear-gradient(145deg,#bbf7d0,#34d399); color: #064e3b; }
-    .chip.c4 { background: linear-gradient(145deg,#fecdd3,#f87171); color: #7f1d1d; }
-    .chip.c5 { background: linear-gradient(145deg,#ddd6fe,#a78bfa); color: #3b0764; }
-    #saved-name { font-weight: 900; font-size: 22px; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .chip span { font-size: 24px; line-height: 1; margin-bottom: 2px; }
+    .chip.c1 { background: linear-gradient(145deg,rgba(253,230,138,0.18),rgba(251,191,36,0.12)); color: #fde68a; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    .chip.c2 { background: linear-gradient(145deg,rgba(165,243,252,0.15),rgba(56,189,248,0.1)); color: #a5f3fc; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    .chip.c3 { background: linear-gradient(145deg,rgba(187,247,208,0.15),rgba(52,211,153,0.1)); color: #86efac; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    .chip.c4 { background: linear-gradient(145deg,rgba(254,205,211,0.15),rgba(248,113,113,0.1)); color: #fca5a5; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    .chip.c5 { background: linear-gradient(145deg,rgba(221,214,254,0.2),rgba(167,139,250,0.15)); color: #c4b5fd; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    #saved-name { font-weight: 900; font-size: 22px; background: linear-gradient(135deg,#a855f7,#ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    /* 다크 배경에서 카드·입력창 가독성 */
+    .card { background: rgba(255,255,255,0.07) !important; border-color: rgba(167,139,250,0.25) !important; }
+    .card label { color: rgba(196,181,253,0.8) !important; }
+    .card input { background: rgba(255,255,255,0.08) !important; border-color: rgba(167,139,250,0.3) !important; color: #f3f0ff !important; }
+    .card input::placeholder { color: rgba(167,139,250,0.5) !important; }
+    .card input:focus { border-color: #a78bfa !important; box-shadow: 0 0 0 4px rgba(124,58,237,0.25) !important; }
+    .card .text-muted, .card p { color: rgba(196,181,253,0.7) !important; }
+    .card .btn-outline { border-color: rgba(167,139,250,0.5) !important; color: #c4b5fd !important; }
+    .card .btn-outline:hover { background: rgba(124,58,237,0.15) !important; }
     /* 게임 기간 안내 카드 */
     #period-block-card {
       display: none;
@@ -159,7 +187,7 @@
     <div class="hero">
       <div class="hero-icon">🗺️</div>
       <h1>탐험 퀴즈 게임</h1>
-      <p>지도의 장소를 찾아가서<br>퀴즈를 풀고 포인트를 모으세요!</p>
+      <p style="color:rgba(196,181,253,0.75);">지도의 장소를 찾아가서<br>퀴즈를 풀고 포인트를 모으세요!</p>
     </div>
 
     <!-- 게임 기간 외 차단 카드 -->
