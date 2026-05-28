@@ -91,11 +91,11 @@
       font-size:12px; font-weight:700; cursor:pointer;">
       🔓 로그아웃
     </button>
-    <!-- 열쇠 아이콘 탭 → 일반 모드 -->
+    <!-- 열쇠 아이콘 탭 → 일반 모드 (fixed로 항상 탭 가능) -->
     <span onclick="window.location.href='index.html'" style="
-      position:absolute; bottom:0; left:0;
-      font-size:22px; opacity:0.3; cursor:pointer;
-      padding:8px; margin:-8px;
+      position:fixed; bottom:20px; left:16px; z-index:9000;
+      font-size:22px; opacity:0.4; cursor:pointer;
+      padding:12px;
       -webkit-tap-highlight-color:transparent; user-select:none;">🔐</span>
   </div>
 
@@ -775,8 +775,10 @@ function adminLogout() {
 }
 
 
-// 이미 로그인 상태면 바로 진입 (북마크 포함)
-if (localStorage.getItem('adminAuth') === '1') {
+// 이미 로그인 상태면 바로 진입 (북마크용)
+// 단, ?fresh=1 파라미터 있으면 5탭 비밀 진입 → 항상 비번 입력 필요
+const _adminFresh = new URLSearchParams(location.search).get('fresh') === '1';
+if (!_adminFresh && localStorage.getItem('adminAuth') === '1') {
   showAdminMain();
 }
 document.getElementById('pw-input').addEventListener('keydown', e => {
