@@ -1287,12 +1287,18 @@
         .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
+    let _chatSending = false;
     async function sendChat() {
+      if (_chatSending) return;          // 중복 전송 방지
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
       if (!text) return;
+
+      _chatSending = true;
+      input.blur();                      // 한글 IME 조합 강제 종료
       input.value = '';
       autoResizeChat(input);
+
       try {
         await db.collection('chat').add({
           nickname,
@@ -1302,6 +1308,8 @@
       } catch(e) {
         showToast('메시지 전송 실패');
         input.value = text;
+      } finally {
+        setTimeout(() => { _chatSending = false; }, 500);
       }
     }
 
