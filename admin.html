@@ -298,6 +298,28 @@
         <p class="text-muted mb-8" style="font-size:13px;">샘플 장소 3개와 QR 코드 2개를 추가해요. (테스트용)</p>
         <button class="btn btn-outline" onclick="addTestData()">테스트 데이터 추가</button>
       </div>
+
+      <!-- 관리자 비밀번호 변경 -->
+      <div class="card mt-16">
+        <h3 style="font-weight:700; margin-bottom:4px;">🔐 관리자 비밀번호 변경</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">변경 후 다음 로그인부터 새 비밀번호를 사용해요.</p>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">현재 비밀번호</label>
+          <input type="password" id="cur-pw" placeholder="현재 비밀번호"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; outline:none; box-sizing:border-box;">
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">새 비밀번호</label>
+          <input type="password" id="new-pw" placeholder="4자 이상"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; outline:none; box-sizing:border-box;">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label style="font-size:13px; font-weight:700; color:#374151;">새 비밀번호 확인</label>
+          <input type="password" id="new-pw-confirm" placeholder="새 비밀번호 다시 입력"
+            style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; outline:none; box-sizing:border-box;">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="changeAdminPassword()">🔐 비밀번호 변경</button>
+      </div>
     </div>
 
   </div>
@@ -679,13 +701,45 @@
 <script>
 
 // ── 로그인 ────────────────────────────────────────
-function adminLogin() {
+async function getAdminPassword() {
+  try {
+    const snap = await db.collection('config').doc('adminSettings').get();
+    if (snap.exists && snap.data()?.adminPassword) return snap.data().adminPassword;
+  } catch(e) {}
+  return GAME_CONFIG.ADMIN_PASSWORD;
+}
+
+async function adminLogin() {
   const pw = document.getElementById('pw-input').value;
-  if (pw === GAME_CONFIG.ADMIN_PASSWORD) {
+  const correctPw = await getAdminPassword();
+  if (pw === correctPw) {
     localStorage.setItem('adminAuth', '1');
     showAdminMain();
   } else {
     showToast('비밀번호가 틀렸어요');
+  }
+}
+
+async function changeAdminPassword() {
+  const curPw = document.getElementById('cur-pw').value;
+  const newPw = document.getElementById('new-pw').value;
+  const newPwConfirm = document.getElementById('new-pw-confirm').value;
+
+  if (!curPw || !newPw || !newPwConfirm) { showToast('모든 항목을 입력해주세요'); return; }
+  if (newPw.length < 4) { showToast('새 비밀번호는 4자 이상이어야 해요'); return; }
+  if (newPw !== newPwConfirm) { showToast('새 비밀번호가 일치하지 않아요'); return; }
+
+  const correctPw = await getAdminPassword();
+  if (curPw !== correctPw) { showToast('현재 비밀번호가 틀렸어요'); return; }
+
+  try {
+    await db.collection('config').doc('adminSettings').set({ adminPassword: newPw }, { merge: true });
+    showToast('✅ 비밀번호가 변경됐어요');
+    document.getElementById('cur-pw').value = '';
+    document.getElementById('new-pw').value = '';
+    document.getElementById('new-pw-confirm').value = '';
+  } catch(e) {
+    showToast('저장 실패: ' + e.message);
   }
 }
 
