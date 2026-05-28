@@ -19,18 +19,29 @@
     body { background: linear-gradient(160deg, #f3f0ff 0%, #ede9fe 40%, #fdf2ff 100%); min-height: 100vh; }
     .page { padding-top: 0; }
     .hero { padding: 60px 0 32px; }
-    .info-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
-    .chip {
-      display: flex; align-items: center; gap: 10px;
-      background: rgba(255,255,255,0.8);
-      -webkit-backdrop-filter: blur(8px);
-      backdrop-filter: blur(8px);
-      border: 1.5px solid #ddd6fe;
-      border-radius: 14px;
-      padding: 12px 16px;
-      font-size: 13px; font-weight: 600; color: #4c1d95;
+    .info-chips {
+      display: flex; flex-direction: row; gap: 8px;
+      margin-top: 20px; overflow-x: auto;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
-    .chip span { font-size: 20px; }
+    .info-chips::-webkit-scrollbar { display: none; }
+    .chip {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      flex: 1; min-width: 88px;
+      padding: 14px 8px 12px;
+      border-radius: 16px;
+      text-align: center;
+      font-size: 11px; font-weight: 700; line-height: 1.35;
+      border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .chip span { font-size: 26px; line-height: 1; margin-bottom: 2px; }
+    .chip.c1 { background: linear-gradient(145deg,#fde68a,#fbbf24); color: #78350f; }
+    .chip.c2 { background: linear-gradient(145deg,#a5f3fc,#38bdf8); color: #0c4a6e; }
+    .chip.c3 { background: linear-gradient(145deg,#bbf7d0,#34d399); color: #064e3b; }
+    .chip.c4 { background: linear-gradient(145deg,#fecdd3,#f87171); color: #7f1d1d; }
+    .chip.c5 { background: linear-gradient(145deg,#ddd6fe,#a78bfa); color: #3b0764; }
     #saved-name { font-weight: 900; font-size: 22px; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     /* 게임 기간 안내 카드 */
     #period-block-card {
@@ -196,9 +207,11 @@
     </div>
 
     <div class="info-chips">
-      <div class="chip"><span>📍</span> 장소에 직접 방문해야 퀴즈가 열려요</div>
-      <div class="chip"><span>📱</span> QR 코드 스캔으로도 포인트 획득!</div>
-      <div class="chip"><span>🏆</span> 포인트 1등이 최후의 승자!</div>
+      <div class="chip c1"><span>📍</span>장소 방문<br>퀴즈 오픈</div>
+      <div class="chip c2"><span>📱</span>QR 스캔<br>포인트 획득</div>
+      <div class="chip c3"><span>✅</span>정답 맞추면<br>포인트 UP</div>
+      <div class="chip c4"><span>💌</span>친구에게<br>포인트 전송</div>
+      <div class="chip c5"><span>🏆</span>1등이<br>최후 승자!</div>
     </div>
   </div>
 
