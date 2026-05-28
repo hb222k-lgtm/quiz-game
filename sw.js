@@ -1,5 +1,5 @@
-/* 탐험 퀴즈 게임 – Service Worker v3 */
-const CACHE_NAME = 'quiz-game-v4';
+/* 탐험 퀴즈 게임 – Service Worker v5 */
+const CACHE_NAME = 'quiz-game-v5';
 
 // ── install: 즉시 활성화 ───────────────────────────
 self.addEventListener('install', () => {
