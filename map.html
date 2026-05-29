@@ -18,6 +18,18 @@
   <link rel="dns-prefetch" href="https://unpkg.com">
   <link rel="stylesheet" href="css/style.css?v=4">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <style>
+    /* 클러스터 스타일 커스텀 */
+    .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+      background-color: rgba(124, 58, 237, 0.25) !important;
+    }
+    .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+      background-color: rgba(124, 58, 237, 0.75) !important;
+      color: #fff !important; font-weight: 800 !important;
+    }
+  </style>
   <style>
     html, body { height: 100%; overflow: hidden; }
     #map { width: 100%; height: 100%; }
@@ -401,6 +413,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.min.js"></script>
   <script src="js/config.js"></script>
   <script>
     const nickname = getNickname();
@@ -409,6 +422,7 @@
     let map, userMarker, userCircle;
     let locations = [];
     let locationMarkers = {};
+    let clusterGroup = null; // 마커 클러스터 그룹
     let participant = { points: 0, completedLocations: [], scannedQRs: [] };
     let currentLocation = null;
     let activePopupLocationId = null;
@@ -433,13 +447,40 @@
     // ── 지도 초기화 ───────────────────────────────
     function initMap() {
       map = L.map('map', { zoomControl: false }).setView(GAME_CONFIG.MAP_CENTER, GAME_CONFIG.MAP_ZOOM);
-      // 네이버 지도와 유사한 깔끔한 스타일 타일
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         attribution: '© OpenStreetMap © CARTO',
         subdomains: 'abcd',
         maxZoom: 20
       }).addTo(map);
       L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      // ── 마커 클러스터 그룹 ─────────────────────
+      // 장소가 겹쳐도 거미줄처럼 펼쳐져서 모두 탭 가능
+      clusterGroup = L.markerClusterGroup({
+        showCoverageOnHover: false,   // 클릭 범위 폴리곤 숨김
+        spiderfyOnMaxZoom: true,      // 최대 줌에서도 spiderify
+        disableClusteringAtZoom: 19,  // 줌 19 이상이면 클러스터 해제
+        maxClusterRadius: 50,         // 50px 이내 마커 묶기
+        spiderLegPolylineOptions: { weight: 2, color: '#7c3aed', opacity: 0.7 },
+        iconCreateFunction: function(cluster) {
+          const count = cluster.getChildCount();
+          return L.divIcon({
+            html: `<div style="
+              background:rgba(124,58,237,0.85); color:#fff;
+              border-radius:50%; width:38px; height:38px;
+              display:flex; align-items:center; justify-content:center;
+              font-size:14px; font-weight:900;
+              box-shadow:0 2px 8px rgba(0,0,0,0.3);
+              border:2.5px solid #fff;">
+              ${count}
+            </div>`,
+            className: '',
+            iconSize: [38, 38],
+            iconAnchor: [19, 19],
+          });
+        }
+      });
+      map.addLayer(clusterGroup);
     }
 
     // ── 방향 마커 아이콘 생성 ──────────────────────
@@ -568,7 +609,7 @@
     function renderLocationMarker(loc) {
       // 이미 완료한 장소는 지도에서 제거
       if (locationMarkers[loc.id]) {
-        map.removeLayer(locationMarkers[loc.id]);
+        clusterGroup.removeLayer(locationMarkers[loc.id]);
         delete locationMarkers[loc.id];
       }
 
@@ -577,7 +618,7 @@
 
       const marker = L.marker([loc.lat, loc.lng], { icon: makeIcon('📍') });
       marker.on('click', () => showLocationPopup(loc));
-      marker.addTo(map);
+      clusterGroup.addLayer(marker); // map 대신 clusterGroup에 추가
       locationMarkers[loc.id] = marker;
     }
 
