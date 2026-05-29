@@ -76,7 +76,7 @@
 <body>
   <div class="page">
     <div class="page-header">
-      <button class="back-btn" onclick="window.location.href='map.html'">←</button>
+      <button class="back-btn" onclick="stopScannerAndGoBack()">←</button>
       <h2>📷 QR 코드 스캔</h2>
     </div>
 
@@ -573,6 +573,31 @@
 
       await handleQRCode(code);
     }
+
+    // ── 카메라 종료 함수 ────────────────────────────
+    async function stopCamera() {
+      if (scanner) {
+        try { await scanner.stop(); } catch(e) {}
+        scanner = null;
+      }
+      // 남아있는 video 트랙 강제 종료 (iOS PiP 방지)
+      document.querySelectorAll('video').forEach(v => {
+        try {
+          v.srcObject?.getTracks()?.forEach(t => t.stop());
+          v.srcObject = null;
+        } catch(e) {}
+      });
+    }
+
+    async function stopScannerAndGoBack() {
+      await stopCamera();
+      window.location.href = 'map.html';
+    }
+
+    // 페이지 이탈 시 카메라 종료 (iOS PiP 방지)
+    document.addEventListener('pagehide',       () => stopCamera());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); });
+    window.addEventListener('beforeunload',      () => stopCamera());
 
     // 시작
     tryURLCode();
