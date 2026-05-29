@@ -171,6 +171,20 @@
     .kakao-manual ol { font-size: 13px; color: #374151; line-height: 2.1; padding-left: 18px; margin: 0; }
     .kakao-manual ol b { color: #7c3aed; }
 
+    /* ── 팀 선택 ── */
+    .team-select-btn {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px; border-radius: 16px; cursor: pointer;
+      border: 2.5px solid transparent; transition: all 0.15s;
+      background: rgba(255,255,255,0.06);
+    }
+    .team-select-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+    .team-select-btn.selected { border-width: 2.5px; }
+    .team-select-btn .team-emoji { font-size: 34px; flex-shrink: 0; line-height: 1; }
+    .team-select-btn .team-info  { flex: 1; }
+    .team-select-btn .team-name  { font-size: 17px; font-weight: 800; }
+    .team-select-btn .team-count { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+
     /* iOS 안내 배너 */
     #ios-banner {
       display: none;
@@ -216,6 +230,18 @@
             maxlength="12" autocomplete="off" autocorrect="off">
         </div>
         <button class="btn btn-primary" style="width:100%;" onclick="checkNickname()">다음 →</button>
+      </div>
+
+      <!-- Step 3: 팀 선택 (팀 게임 활성화 시에만 표시) -->
+      <div id="step-team" style="display:none;">
+        <div style="text-align:center; margin-bottom:18px;">
+          <div style="font-size:40px; margin-bottom:8px;">🏆</div>
+          <div style="font-size:18px; font-weight:900; color:#f3f0ff;">팀 선택</div>
+          <div style="font-size:13px; color:rgba(196,181,253,0.75); margin-top:4px;">참여할 팀을 골라주세요!</div>
+        </div>
+        <div id="team-buttons" style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;"></div>
+        <button class="btn btn-primary" id="team-join-btn" style="width:100%; margin-bottom:8px;" onclick="confirmTeam()" disabled>이 팀으로 입장 🚀</button>
+        <button class="btn btn-outline" style="width:100%; font-size:13px;" onclick="backToPin()">← 비밀번호 다시 입력</button>
       </div>
 
       <!-- Step 2: PIN 입력 (hidden) -->
@@ -546,12 +572,119 @@
             joinedAt: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
         }
+        // ── 팀 게임 모드 확인 ──────────────────────
+        try {
+          const tmSnap = await db.collection('config').doc('teamMode').get();
+          const tm = tmSnap.data();
+          if (tm?.enabled) {
+            // 이미 팀이 있으면 바로 입장
+            const existingTeam = _isExistingUser
+              ? (await db.collection('participants').doc(name).get()).data()?.team
+              : null;
+            if (!existingTeam) {
+              _pendingTeamName = name;
+              _pendingTeamIsNew = !_isExistingUser;
+              await showTeamStep(tm.teams || []);
+              btn.textContent = '입장 🚀'; btn.disabled = false;
+              return;
+            }
+          }
+        } catch(e) { /* 팀 모드 없으면 그냥 진행 */ }
+
         setNickname(name);
         window.location.href = 'map.html';
       } catch (e) {
         showToast('오류가 발생했어요. 다시 시도해주세요.');
         btn.textContent = '입장 🚀'; btn.disabled = false;
       }
+    }
+
+    // ── 팀 선택 로직 ─────────────────────────────
+    let _pendingTeamName = null;
+    let _pendingTeamIsNew = false;
+    let _selectedTeamId = null;
+    let _teamMemberCounts = {};
+
+    async function showTeamStep(teams) {
+      // 팀원 수 로드
+      try {
+        const pSnap = await db.collection('participants').get();
+        _teamMemberCounts = {};
+        pSnap.forEach(d => {
+          const t = d.data()?.team;
+          if (t) _teamMemberCounts[t] = (_teamMemberCounts[t] || 0) + 1;
+        });
+      } catch(e) {}
+
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-team').style.display = 'block';
+      _selectedTeamId = null;
+      document.getElementById('team-join-btn').disabled = true;
+
+      const container = document.getElementById('team-buttons');
+      container.innerHTML = '';
+      (teams || []).forEach(team => {
+        const count = _teamMemberCounts[team.id] || 0;
+        const btn = document.createElement('div');
+        btn.className = 'team-select-btn';
+        btn.style.borderColor = team.color || '#7c3aed';
+        btn.dataset.teamId = team.id;
+        btn.innerHTML = `
+          <span class="team-emoji">${team.emoji || '🏆'}</span>
+          <div class="team-info">
+            <div class="team-name" style="color:${team.color || '#7c3aed'};">${escHtmlIndex(team.name)}</div>
+            <div class="team-count" style="color:rgba(196,181,253,0.75);">현재 ${count}명</div>
+          </div>
+          <span style="font-size:20px; color:rgba(255,255,255,0.3);" id="team-check-${team.id}">○</span>`;
+        btn.addEventListener('click', () => selectTeam(team.id, team.color || '#7c3aed', teams));
+        container.appendChild(btn);
+      });
+    }
+
+    function selectTeam(teamId, color, teams) {
+      _selectedTeamId = teamId;
+      // 모든 버튼 선택 해제
+      document.querySelectorAll('.team-select-btn').forEach(b => {
+        b.classList.remove('selected');
+        const chk = b.querySelector('[id^="team-check-"]');
+        if (chk) chk.textContent = '○';
+        b.style.background = 'rgba(255,255,255,0.06)';
+      });
+      // 선택된 버튼 강조
+      const selected = document.querySelector(`.team-select-btn[data-team-id="${teamId}"]`);
+      if (selected) {
+        selected.classList.add('selected');
+        selected.style.background = `${color}22`;
+        const chk = document.getElementById('team-check-' + teamId);
+        if (chk) chk.textContent = '●';
+        chk.style.color = color;
+      }
+      document.getElementById('team-join-btn').disabled = false;
+    }
+
+    async function confirmTeam() {
+      if (!_selectedTeamId || !_pendingTeamName) return;
+      const btn = document.getElementById('team-join-btn');
+      btn.textContent = '입장 중...'; btn.disabled = true;
+      try {
+        await db.collection('participants').doc(_pendingTeamName).update({
+          team: _selectedTeamId
+        });
+        setNickname(_pendingTeamName);
+        window.location.href = 'map.html';
+      } catch(e) {
+        showToast('오류가 발생했어요. 다시 시도해주세요.');
+        btn.textContent = '이 팀으로 입장 🚀'; btn.disabled = false;
+      }
+    }
+
+    function backToPin() {
+      document.getElementById('step-team').style.display = 'none';
+      document.getElementById('step-pin').style.display = 'block';
+    }
+
+    function escHtmlIndex(s) {
+      return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
     function backToNickname() {

@@ -100,6 +100,7 @@
   <!-- 탭 -->
   <div class="tab-bar">
     <button class="tab-btn active" onclick="switchTab('leaderboard', this)">🏆 리더보드</button>
+    <button class="tab-btn" onclick="switchTab('teams', this)">👥 팀</button>
     <button class="tab-btn" onclick="switchTab('locations', this)">📍 장소</button>
     <button class="tab-btn" onclick="switchTab('quizbank', this)">📝 문제은행</button>
     <button class="tab-btn" onclick="switchTab('qrcodes', this)">📷 QR코드</button>
@@ -109,6 +110,66 @@
   </div>
 
   <div style="flex:1; overflow-y:auto;">
+
+    <!-- ── 팀 탭 ── -->
+    <div class="tab-panel" id="tab-teams">
+
+      <!-- 팀 모드 ON/OFF -->
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <h3 style="font-weight:700;">👥 팀 게임 모드</h3>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <span id="team-mode-label" style="font-size:13px; font-weight:700; color:#64748b;">비활성</span>
+            <div id="team-mode-toggle" onclick="toggleTeamMode()" style="
+              width:48px; height:26px; border-radius:13px; background:#e2e8f0;
+              position:relative; cursor:pointer; transition:background 0.2s;">
+              <div id="team-mode-knob" style="
+                width:22px; height:22px; border-radius:50%; background:#fff;
+                position:absolute; top:2px; left:2px; transition:left 0.2s;
+                box-shadow:0 1px 4px rgba(0,0,0,0.2);"></div>
+            </div>
+          </label>
+        </div>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:0;">
+          활성화하면 참가자가 팀을 선택해 등록하고, 팀별 순위가 표시돼요.
+        </p>
+      </div>
+
+      <!-- 팀 목록 편집 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="font-weight:700;">팀 목록</h3>
+          <button class="btn btn-primary btn-sm" onclick="openTeamModal()">+ 팀 추가</button>
+        </div>
+        <div id="team-list-admin" style="display:flex; flex-direction:column; gap:8px;">
+          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">팀이 없어요</p>
+        </div>
+      </div>
+
+      <!-- 팀 순위 현황 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="font-weight:700;">🏆 팀 순위 현황</h3>
+          <button class="btn btn-outline btn-sm" onclick="loadTeamStandings()" style="font-size:12px;">새로고침</button>
+        </div>
+        <div id="team-standings-admin">
+          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">불러오는 중...</p>
+        </div>
+      </div>
+
+      <!-- 참가자 팀 배정 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="font-weight:700;">🔄 참가자 팀 재배정</h3>
+          <button class="btn btn-outline btn-sm" onclick="loadAssignmentList()" style="font-size:12px;">불러오기</button>
+        </div>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">참가자 개별로 팀을 변경할 수 있어요.</p>
+        <div id="team-assignment-list">
+          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">위 "불러오기" 버튼을 눌러주세요</p>
+        </div>
+      </div>
+
+    </div>
 
     <!-- ── 리더보드 탭 ── -->
     <div class="tab-panel active" id="tab-leaderboard">
@@ -784,6 +845,233 @@ document.getElementById('pw-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') adminLogin();
 });
 
+// ── 팀 게임 관리 ──────────────────────────────────
+let _teamModeData = { enabled: false, teams: [] };
+
+async function loadTeamModeAdmin() {
+  try {
+    const snap = await db.collection('config').doc('teamMode').get();
+    _teamModeData = snap.data() || { enabled: false, teams: [] };
+    _teamModeData.teams = _teamModeData.teams || [];
+    renderTeamModeToggle();
+    renderTeamListAdmin();
+    loadTeamStandings();
+  } catch(e) { console.error(e); }
+}
+
+function renderTeamModeToggle() {
+  const on = !!_teamModeData.enabled;
+  const toggle = document.getElementById('team-mode-toggle');
+  const knob   = document.getElementById('team-mode-knob');
+  const label  = document.getElementById('team-mode-label');
+  if (!toggle) return;
+  toggle.style.background = on ? '#7c3aed' : '#e2e8f0';
+  knob.style.left = on ? '24px' : '2px';
+  label.textContent = on ? '활성' : '비활성';
+  label.style.color = on ? '#7c3aed' : '#64748b';
+}
+
+async function toggleTeamMode() {
+  _teamModeData.enabled = !_teamModeData.enabled;
+  renderTeamModeToggle();
+  await saveTeamMode();
+  showToast(_teamModeData.enabled ? '✅ 팀 게임 활성화됐어요' : '⏹ 팀 게임 비활성화됐어요');
+}
+
+async function saveTeamMode() {
+  await db.collection('config').doc('teamMode').set(_teamModeData, { merge: true });
+}
+
+function renderTeamListAdmin() {
+  const el = document.getElementById('team-list-admin');
+  if (!el) return;
+  const teams = _teamModeData.teams || [];
+  if (!teams.length) {
+    el.innerHTML = '<p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">팀이 없어요. "+ 팀 추가"로 추가해주세요.</p>';
+    return;
+  }
+  el.innerHTML = teams.map((t, i) => `
+    <div style="display:flex; align-items:center; gap:10px; padding:10px 12px;
+      background:${t.color||'#7c3aed'}12; border-radius:12px; border:1.5px solid ${t.color||'#7c3aed'}44;">
+      <span style="font-size:24px;">${t.emoji||'🏆'}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:15px; font-weight:800; color:${t.color||'#1e293b'};">${escHtml(t.name)}</div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:1px;">ID: ${t.id}</div>
+      </div>
+      <button onclick="editTeam(${i})" style="
+        padding:6px 10px; background:white; border:1.5px solid #e2e8f0;
+        border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; color:#374151;">✏️</button>
+      <button onclick="deleteTeam(${i})" style="
+        padding:6px 10px; background:#fef2f2; border:1.5px solid #fca5a5;
+        border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; color:#ef4444;">🗑</button>
+    </div>`).join('');
+}
+
+// 팀 추가/수정 모달
+let _editTeamIdx = -1;
+
+function openTeamModal(idx = -1) {
+  _editTeamIdx = idx;
+  const team = idx >= 0 ? _teamModeData.teams[idx] : { id: '', name: '', color: '#7c3aed', emoji: '🏆' };
+
+  const old = document.getElementById('team-edit-modal');
+  if (old) old.remove();
+
+  const el = document.createElement('div');
+  el.id = 'team-edit-modal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:20px;';
+  el.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:24px;max-width:340px;width:100%;">
+      <h3 style="font-weight:800;margin-bottom:16px;">${idx >= 0 ? '팀 수정' : '팀 추가'}</h3>
+      <div style="display:grid;grid-template-columns:64px 1fr;gap:8px;margin-bottom:10px;">
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">이모지</label>
+          <input id="te-emoji" type="text" value="${team.emoji||'🏆'}" maxlength="2"
+            style="width:100%;padding:10px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:22px;text-align:center;box-sizing:border-box;outline:none;">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">팀 이름</label>
+          <input id="te-name" type="text" value="${escHtml(team.name)}" placeholder="예: 빨간 팀"
+            style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;box-sizing:border-box;outline:none;">
+        </div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">ID (영문 소문자, 공백 없이)</label>
+        <input id="te-id" type="text" value="${team.id}" placeholder="예: red_team" ${idx >= 0 ? 'disabled style="background:#f1f5f9;"' : ''}
+          style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;box-sizing:border-box;outline:none;">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px;">팀 색상</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#7c3aed','#ec4899','#14b8a6'].map(c =>
+            `<div onclick="document.getElementById('te-color').value='${c}';this.parentNode.querySelectorAll('.color-dot').forEach(d=>d.style.outline='none');this.style.outline='3px solid #333';this.style.outlineOffset='2px';"
+              class="color-dot"
+              style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0;
+                ${team.color===c?'outline:3px solid #333;outline-offset:2px;':''}"></div>`
+          ).join('')}
+        </div>
+        <input type="hidden" id="te-color" value="${team.color||'#7c3aed'}">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="saveTeamEdit()" style="flex:1;padding:13px;background:#7c3aed;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;">저장</button>
+        <button onclick="document.getElementById('team-edit-modal').remove()" style="padding:13px 16px;background:#f1f5f9;color:#64748b;border:none;border-radius:12px;font-size:14px;cursor:pointer;">취소</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+function editTeam(idx) { openTeamModal(idx); }
+
+async function saveTeamEdit() {
+  const name  = document.getElementById('te-name').value.trim();
+  const emoji = document.getElementById('te-emoji').value.trim();
+  const color = document.getElementById('te-color').value;
+  const id    = _editTeamIdx >= 0
+    ? _teamModeData.teams[_editTeamIdx].id
+    : (document.getElementById('te-id').value.trim().replace(/\s+/g,'_').toLowerCase());
+
+  if (!name) { showToast('팀 이름을 입력해주세요'); return; }
+  if (!id)   { showToast('팀 ID를 입력해주세요'); return; }
+
+  if (_editTeamIdx >= 0) {
+    _teamModeData.teams[_editTeamIdx] = { id, name, color, emoji: emoji||'🏆' };
+  } else {
+    if (_teamModeData.teams.some(t => t.id === id)) {
+      showToast('이미 같은 ID의 팀이 있어요'); return;
+    }
+    _teamModeData.teams.push({ id, name, color, emoji: emoji||'🏆' });
+  }
+  await saveTeamMode();
+  document.getElementById('team-edit-modal').remove();
+  renderTeamListAdmin();
+  showToast('✅ 팀이 저장됐어요');
+}
+
+async function deleteTeam(idx) {
+  const t = _teamModeData.teams[idx];
+  if (!confirm(`"${t.name}" 팀을 삭제할까요? 이미 배정된 팀원은 팀 없음 상태가 됩니다.`)) return;
+  _teamModeData.teams.splice(idx, 1);
+  await saveTeamMode();
+  renderTeamListAdmin();
+  showToast('팀이 삭제됐어요');
+}
+
+async function loadTeamStandings() {
+  const el = document.getElementById('team-standings-admin');
+  if (!el) return;
+  if (!_teamModeData?.teams?.length) {
+    el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:16px;">팀 설정이 없어요</p>';
+    return;
+  }
+  try {
+    const pSnap = await db.collection('participants').get();
+    const teamPts = {}, teamMembers = {};
+    _teamModeData.teams.forEach(t => { teamPts[t.id] = 0; teamMembers[t.id] = 0; });
+    pSnap.forEach(d => {
+      const tid = d.data()?.team;
+      if (tid && tid in teamPts) {
+        teamPts[tid] += (d.data().points || 0);
+        teamMembers[tid]++;
+      }
+    });
+    const sorted = [..._teamModeData.teams].sort((a,b) => (teamPts[b.id]||0) - (teamPts[a.id]||0));
+    const medals = ['🥇','🥈','🥉'];
+    el.innerHTML = sorted.map((t, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;
+        background:${t.color||'#7c3aed'}14;border-radius:12px;border:1.5px solid ${t.color||'#7c3aed'}44;">
+        <span style="font-size:20px;">${medals[i]||`<b style="color:#64748b;">${i+1}</b>`}</span>
+        <span style="font-size:22px;">${t.emoji||'🏆'}</span>
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:800;color:${t.color||'#1e293b'};">${escHtml(t.name)}</div>
+          <div style="font-size:12px;color:#64748b;">${teamMembers[t.id]}명</div>
+        </div>
+        <div style="font-size:18px;font-weight:900;color:${t.color||'#7c3aed'};">⭐ ${(teamPts[t.id]||0).toLocaleString()}</div>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = '<p style="color:#ef4444;font-size:13px;">오류 발생</p>'; }
+}
+
+async function loadAssignmentList() {
+  const el = document.getElementById('team-assignment-list');
+  if (!el) return;
+  el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;">불러오는 중...</p>';
+  try {
+    const pSnap = await db.collection('participants').orderBy('points', 'desc').get();
+    const teams = _teamModeData.teams || [];
+    if (!teams.length) { el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;">팀을 먼저 추가해주세요</p>'; return; }
+    const teamOptions = teams.map(t =>
+      `<option value="${escHtml(t.id)}">${t.emoji||''} ${escHtml(t.name)}</option>`
+    ).join('');
+    el.innerHTML = pSnap.docs.map(d => {
+      const p = d.data();
+      const myTeam = p.team || '';
+      const opts = `<option value="">팀 없음</option>` + teams.map(t =>
+        `<option value="${t.id}" ${t.id===myTeam?'selected':''}>${t.emoji||''} ${t.name}</option>`
+      ).join('');
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+        <div style="flex:1;font-size:14px;font-weight:700;color:#1e293b;">${escHtml(d.id)}<span style="font-size:12px;color:#94a3b8;font-weight:400;margin-left:6px;">${p.points||0}점</span></div>
+        <select onchange="assignTeam('${escHtml(d.id)}',this.value)"
+          style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:700;outline:none;cursor:pointer;">
+          ${opts}
+        </select>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<p style="color:#ef4444;font-size:13px;">오류 발생</p>'; }
+}
+
+async function assignTeam(nickname, teamId) {
+  try {
+    await db.collection('participants').doc(nickname).update({
+      team: teamId || firebase.firestore.FieldValue.delete()
+    });
+    showToast(`✅ ${nickname} → ${teamId || '팀 없음'}`);
+  } catch(e) { showToast('팀 변경 실패'); }
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── 탭 전환 ──────────────────────────────────────
 function switchTab(id, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -792,6 +1080,7 @@ function switchTab(id, btn) {
   btn.classList.add('active');
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
   if (id === 'settings') { loadGamePeriod(); loadTransferLimit(); loadTransferLog(); }
+  if (id === 'teams') loadTeamModeAdmin();
 }
 
 // ── 관리자 초기화 ─────────────────────────────────

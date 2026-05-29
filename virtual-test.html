@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>가상 테스트 - 탐험 퀴즈</title>
+  <link rel="stylesheet" href="css/style.css?v=4">
+  <style>
+    body { background: #0d0720; color: #e9d5ff; font-family: -apple-system, sans-serif; min-height: 100vh; padding: 20px; }
+    .test-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(167,139,250,0.25); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+    .test-card h2 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .test-card p { font-size: 13px; color: rgba(196,181,253,0.7); margin-bottom: 14px; }
+    .btn-run { padding: 12px 24px; background: linear-gradient(135deg,#7c3aed,#a855f7); color: #fff; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; margin-right: 8px; }
+    .btn-clean { padding: 12px 24px; background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .log { background: rgba(0,0,0,0.4); border-radius: 10px; padding: 14px; margin-top: 14px; font-size: 12px; font-family: monospace; max-height: 320px; overflow-y: auto; line-height: 1.8; }
+    .log-ok   { color: #86efac; }
+    .log-err  { color: #fca5a5; }
+    .log-info { color: #93c5fd; }
+    .log-head { color: #fde68a; font-weight: 800; font-size: 13px; }
+    .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+    .result-row { background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.25); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+    .result-row .rank { font-size: 18px; font-weight: 900; }
+    .result-row .name { font-weight: 700; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .result-row .pts  { color: #fde68a; font-weight: 700; font-size: 12px; }
+    .progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#a855f7); border-radius: 3px; transition: width 0.4s; width: 0%; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+    .badge-run { background: #059669; color: #fff; }
+    .badge-idle { background: #475569; color: #fff; }
+    .badge-done { background: #7c3aed; color: #fff; }
+  </style>
+</head>
+<body>
+  <div style="max-width: 600px; margin: 0 auto;">
+    <div style="text-align:center; padding: 32px 0 24px;">
+      <div style="font-size: 48px; margin-bottom: 8px;">🧪</div>
+      <h1 style="font-size: 24px; font-weight: 900; background: linear-gradient(135deg,#a855f7,#ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">가상 테스트 실행기</h1>
+      <p style="font-size: 13px; color: rgba(196,181,253,0.6); margin-top: 8px;">Firebase에 테스트 참가자 데이터를 생성하고 시뮬레이션해요</p>
+    </div>
+
+    <!-- ── 일반 가상 테스트 ── -->
+    <div class="test-card">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <h2>🎮 일반 가상 테스트</h2>
+        <span class="badge badge-idle" id="t1-badge">대기</span>
+      </div>
+      <p>10명의 가상 참가자가 퀴즈를 풀고 포인트를 획득하는 시나리오를 시뮬레이션해요.</p>
+      <div class="progress-bar"><div class="progress-fill" id="t1-progress"></div></div>
+      <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-run" onclick="runGeneralTest()">▶ 테스트 실행</button>
+        <button class="btn-clean" onclick="cleanTest('general')">🗑 데이터 삭제</button>
+      </div>
+      <div class="log" id="t1-log" style="display:none;"></div>
+      <div id="t1-result"></div>
+    </div>
+
+    <!-- ── 40명 / 4팀 가상 테스트 ── -->
+    <div class="test-card">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <h2>🏆 40명 / 4팀 팀 게임 테스트</h2>
+        <span class="badge badge-idle" id="t2-badge">대기</span>
+      </div>
+      <p>40명 참가자를 10명씩 4팀으로 나눠 팀 포인트 경쟁을 시뮬레이션해요. 팀 설정도 Firestore에 등록돼요.</p>
+      <div class="progress-bar"><div class="progress-fill" id="t2-progress"></div></div>
+      <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-run" onclick="runTeamTest()">▶ 테스트 실행</button>
+        <button class="btn-clean" onclick="cleanTest('team')">🗑 데이터 삭제</button>
+      </div>
+      <div class="log" id="t2-log" style="display:none;"></div>
+      <div id="t2-result"></div>
+    </div>
+
+    <!-- ── 전체 테스트 정리 ── -->
+    <div class="test-card" style="border-color:rgba(239,68,68,0.3);">
+      <h2 style="color:#fca5a5;">🗑 전체 테스트 데이터 정리</h2>
+      <p>위 테스트에서 생성된 모든 가상 참가자 데이터를 Firestore에서 삭제해요.</p>
+      <button class="btn-clean" onclick="cleanTest('all')">전체 삭제</button>
+    </div>
+
+    <div style="text-align:center; padding:20px 0; font-size:12px; color:rgba(196,181,253,0.4);">
+      ← <a href="admin.html" style="color:inherit;">관리자 페이지로 돌아가기</a>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/config.js"></script>
+  <script>
+    // ── 상수 ──────────────────────────────────────
+    const GENERAL_PREFIX = '[G테스트]';
+    const TEAM_PREFIX    = '[T테스트]';
+
+    const TEAMS = [
+      { id: 'red_team',    name: '빨간 팀', color: '#ef4444', emoji: '🔴' },
+      { id: 'blue_team',   name: '파란 팀', color: '#3b82f6', emoji: '🔵' },
+      { id: 'yellow_team', name: '노란 팀', color: '#eab308', emoji: '🟡' },
+      { id: 'green_team',  name: '초록 팀', color: '#22c55e', emoji: '🟢' },
+    ];
+
+    // 일반 참가자 시나리오 (이름, 기본 점수, 완료 장소 수)
+    const GENERAL_PLAYERS = [
+      { suffix: '탐험왕',   basePoints: 480 },
+      { suffix: '퀴즈달인', basePoints: 420 },
+      { suffix: '지도사랑', basePoints: 370 },
+      { suffix: '포인트몬', basePoints: 310 },
+      { suffix: '빠른발',   basePoints: 280 },
+      { suffix: '느린발',   basePoints: 220 },
+      { suffix: '반짝이',   basePoints: 190 },
+      { suffix: '늦깎이',   basePoints: 150 },
+      { suffix: '신입생',   basePoints: 90  },
+      { suffix: '첫걸음',   basePoints: 40  },
+    ];
+
+    // ── 유틸 ──────────────────────────────────────
+    function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function log(id, msg, cls = '') {
+      const el = document.getElementById(id + '-log');
+      el.style.display = 'block';
+      const line = document.createElement('div');
+      if (cls) line.className = 'log-' + cls;
+      line.textContent = msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function setProgress(id, pct) {
+      document.getElementById(id + '-progress').style.width = pct + '%';
+    }
+
+    function setBadge(id, type) {
+      const el = document.getElementById(id + '-badge');
+      el.className = 'badge badge-' + type;
+      el.textContent = type === 'run' ? '실행 중' : type === 'done' ? '완료' : '대기';
+    }
+
+    async function batchWrite(docs) {
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        docs.slice(i, i + BATCH_SIZE).forEach(({ ref, data }) => batch.set(ref, data, { merge: true }));
+        await batch.commit();
+      }
+    }
+
+    // ── 일반 가상 테스트 ─────────────────────────
+    async function runGeneralTest() {
+      const logId = 't1';
+      document.getElementById(logId + '-log').innerHTML = '';
+      document.getElementById(logId + '-result').innerHTML = '';
+      setBadge(logId, 'run');
+      setProgress(logId, 0);
+
+      log(logId, '=== 일반 가상 테스트 시작 ===', 'head');
+      log(logId, `참가자 10명 생성 중...`, 'info');
+
+      const docs = [];
+      const now = firebase.firestore.Timestamp.now();
+
+      GENERAL_PLAYERS.forEach((p, i) => {
+        const nick   = GENERAL_PREFIX + p.suffix;
+        const pts    = p.basePoints + rand(-20, 20);
+        const locs   = rand(1, 5);
+        const locIds = Array.from({length: locs}, (_, k) => `loc_${k+1}`);
+        const qrs    = rand(0, 3);
+        const qrIds  = Array.from({length: qrs}, (_, k) => `qr_test_${k+1}`);
+
+        docs.push({
+          ref: db.collection('participants').doc(nick),
+          data: {
+            nickname: nick, pin: '0000',
+            deviceId: `test-device-general-${i}`,
+            points: pts,
+            earnedPoints: pts,
+            completedLocations: locIds,
+            scannedQRs: qrIds,
+            joinedAt: firebase.firestore.Timestamp.fromMillis(now.toMillis() - rand(10, 120) * 60000),
+          }
+        });
+      });
+
+      try {
+        await batchWrite(docs);
+        log(logId, `✅ ${docs.length}명 참가자 생성 완료`, 'ok');
+        setProgress(logId, 50);
+
+        // 채팅 시뮬레이션
+        log(logId, '💬 채팅 메시지 시뮬레이션 중...', 'info');
+        const chatMsgs = [
+          '여기 문제가 너무 어려워요 😅',
+          '1번 장소 찾았어요! 퀴즈 어렵지 않아요~',
+          '포인트 200점 달성!! 🎉',
+          '퀴즈 정답 맞췄어요!',
+          '지도가 잘 안 보이는데 GPS가 문제인 듯요',
+          '누가 1등이에요?',
+          '다들 파이팅!! 💪',
+        ];
+        const chatBatch = db.batch();
+        chatMsgs.forEach((text, i) => {
+          const nick = GENERAL_PREFIX + GENERAL_PLAYERS[i % GENERAL_PLAYERS.length].suffix;
+          chatBatch.set(db.collection('chat').doc(), {
+            nickname: nick, text,
+            sentAt: firebase.firestore.Timestamp.fromMillis(now.toMillis() - rand(0, 60) * 60000),
+          });
+        });
+        await chatBatch.commit();
+        log(logId, `✅ 채팅 ${chatMsgs.length}개 생성 완료`, 'ok');
+        setProgress(logId, 80);
+
+        // 최종 순위 표시
+        const sorted = [...GENERAL_PLAYERS]
+          .map(p => ({ nick: GENERAL_PREFIX + p.suffix, pts: docs.find(d => d.ref.id === GENERAL_PREFIX + p.suffix)?.data.points }))
+          .sort((a,b) => b.pts - a.pts);
+
+        log(logId, '', '');
+        log(logId, '=== 최종 순위 ===', 'head');
+        sorted.forEach((p, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}위`;
+          log(logId, `${medal} ${p.nick}: ${p.pts}점`, i < 3 ? 'ok' : '');
+        });
+
+        setProgress(logId, 100);
+        setBadge(logId, 'done');
+        renderGeneralResult(sorted);
+
+      } catch(e) {
+        log(logId, '❌ 오류: ' + e.message, 'err');
+        setBadge(logId, 'idle');
+      }
+    }
+
+    function renderGeneralResult(sorted) {
+      const medals = ['🥇','🥈','🥉'];
+      const el = document.getElementById('t1-result');
+      el.innerHTML = `<div style="margin-top:14px;">
+        <div style="font-size:13px; font-weight:700; color:rgba(196,181,253,0.7); margin-bottom:10px;">최종 리더보드</div>
+        <div class="result-grid">
+          ${sorted.map((p, i) => `<div class="result-row">
+            <div class="rank">${medals[i] || (i+1+'위')}</div>
+            <div class="name">${escHtml(p.nick.replace(GENERAL_PREFIX,''))}</div>
+            <div class="pts">⭐ ${p.pts}점</div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    // ── 40명 팀 게임 테스트 ──────────────────────
+    async function runTeamTest() {
+      const logId = 't2';
+      document.getElementById(logId + '-log').innerHTML = '';
+      document.getElementById(logId + '-result').innerHTML = '';
+      setBadge(logId, 'run');
+      setProgress(logId, 0);
+
+      log(logId, '=== 40명 / 4팀 팀 게임 테스트 시작 ===', 'head');
+
+      // 1. 팀 설정 저장
+      log(logId, '1️⃣ 팀 설정 Firestore 등록 중...', 'info');
+      try {
+        await db.collection('config').doc('teamMode').set({
+          enabled: true,
+          teams: TEAMS,
+        }, { merge: true });
+        log(logId, '✅ 팀 설정 등록 완료 (빨간/파란/노란/초록 팀)', 'ok');
+        setProgress(logId, 10);
+      } catch(e) {
+        log(logId, '❌ 팀 설정 저장 실패: ' + e.message, 'err');
+        setBadge(logId, 'idle');
+        return;
+      }
+
+      // 2. 각 팀 10명씩 생성
+      log(logId, '2️⃣ 40명 참가자 생성 중 (팀당 10명)...', 'info');
+      const teamNames  = ['빨간','파란','노란','초록'];
+      const teamEmojis = ['🔴','🔵','🟡','🟢'];
+      const now = firebase.firestore.Timestamp.now();
+      const docs = [];
+
+      // 팀별 기본 실력 차이 (더 흥미로운 경쟁 시뮬레이션)
+      const teamBaseStrength = [1.0, 0.92, 1.05, 0.87];
+
+      TEAMS.forEach((team, ti) => {
+        for (let pi = 1; pi <= 10; pi++) {
+          const nick  = `${TEAM_PREFIX}${teamEmojis[ti]}${teamNames[ti]}${String(pi).padStart(2,'0')}`;
+          const base  = rand(60, 300);
+          const pts   = Math.round(base * teamBaseStrength[ti] + rand(-15, 15));
+          const locs  = rand(0, 5);
+          const locIds = Array.from({length: locs}, (_, k) => `loc_${k+1}`);
+          const qrs   = rand(0, 4);
+          const qrIds = Array.from({length: qrs}, (_, k) => `qr_${k+1}`);
+
+          docs.push({
+            ref: db.collection('participants').doc(nick),
+            data: {
+              nickname: nick, pin: '0000',
+              deviceId: `test-device-team-${ti}-${pi}`,
+              points: pts,
+              earnedPoints: pts,
+              completedLocations: locIds,
+              scannedQRs: qrIds,
+              team: team.id,
+              joinedAt: firebase.firestore.Timestamp.fromMillis(now.toMillis() - rand(5, 180) * 60000),
+            }
+          });
+        }
+      });
+
+      try {
+        // 배치로 10명씩 나눠 저장
+        for (let ti = 0; ti < TEAMS.length; ti++) {
+          const teamDocs = docs.filter(d => d.data.team === TEAMS[ti].id);
+          await batchWrite(teamDocs);
+          log(logId, `✅ ${teamNames[ti]} 팀 10명 생성 완료`, 'ok');
+          setProgress(logId, 10 + (ti + 1) * 18);
+        }
+
+        // 3. 팀별 점수 집계
+        log(logId, '', '');
+        log(logId, '3️⃣ 팀별 순위 집계 중...', 'info');
+
+        const teamTotals = {};
+        TEAMS.forEach(t => { teamTotals[t.id] = 0; });
+        docs.forEach(d => { teamTotals[d.data.team] += d.data.points; });
+
+        const sortedTeams = [...TEAMS].sort((a,b) => teamTotals[b.id] - teamTotals[a.id]);
+
+        log(logId, '', '');
+        log(logId, '=== 팀 순위 ===', 'head');
+        sortedTeams.forEach((t, i) => {
+          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}위`;
+          const members = docs.filter(d => d.data.team === t.id);
+          const avg = Math.round(teamTotals[t.id] / members.length);
+          log(logId, `${medal} ${t.emoji} ${t.name}: 합계 ${teamTotals[t.id]}점 (평균 ${avg}점)`, i < 3 ? 'ok' : '');
+        });
+
+        // 4. 각 팀 MVP (최고 점수자)
+        log(logId, '', '');
+        log(logId, '=== 팀별 MVP ===', 'head');
+        TEAMS.forEach(t => {
+          const members = docs.filter(d => d.data.team === t.id).map(d => d.data);
+          const mvp = members.reduce((a, b) => a.points > b.points ? a : b);
+          log(logId, `${t.emoji} ${t.name} MVP: ${mvp.nickname.replace(TEAM_PREFIX,'')} (${mvp.points}점)`, 'info');
+        });
+
+        // 5. 개인 전체 순위 (Top 10)
+        log(logId, '', '');
+        log(logId, '=== 개인 전체 Top 10 ===', 'head');
+        const allSorted = docs.map(d => d.data).sort((a,b) => b.points - a.points);
+        allSorted.slice(0, 10).forEach((p, i) => {
+          const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}위`;
+          log(logId, `${medal} ${p.nickname.replace(TEAM_PREFIX,'')} — ${p.points}점`, i < 3 ? 'ok' : '');
+        });
+
+        setProgress(logId, 100);
+        setBadge(logId, 'done');
+        renderTeamResult(sortedTeams, teamTotals, docs);
+        log(logId, '', '');
+        log(logId, '✅ 테스트 완료! 관리자 페이지 → 팀 탭에서 결과를 확인하세요.', 'ok');
+
+      } catch(e) {
+        log(logId, '❌ 오류: ' + e.message, 'err');
+        setBadge(logId, 'idle');
+      }
+    }
+
+    function renderTeamResult(sortedTeams, teamTotals, docs) {
+      const medals = ['🥇','🥈','🥉'];
+      const el = document.getElementById('t2-result');
+      el.innerHTML = `
+        <div style="margin-top:14px;">
+          <div style="font-size:13px; font-weight:700; color:rgba(196,181,253,0.7); margin-bottom:10px;">팀 최종 순위</div>
+          ${sortedTeams.map((t, i) => {
+            const members = docs.filter(d => d.data.team === t.id);
+            const avg = Math.round(teamTotals[t.id] / members.length);
+            return `<div style="
+              display:flex; align-items:center; gap:12px;
+              padding:12px 14px; margin-bottom:8px;
+              background:${t.color}18; border:1.5px solid ${t.color}44; border-radius:12px;">
+              <div style="font-size:22px;">${medals[i]||`<b style="color:#94a3b8">${i+1}</b>`}</div>
+              <div style="font-size:26px;">${t.emoji}</div>
+              <div style="flex:1;">
+                <div style="font-size:15px;font-weight:800;color:${t.color};">${t.name}</div>
+                <div style="font-size:12px;color:rgba(196,181,253,0.6);">10명 · 평균 ${avg}점</div>
+              </div>
+              <div style="font-size:18px;font-weight:900;color:${t.color};">⭐ ${teamTotals[t.id].toLocaleString()}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:13px; font-weight:700; color:rgba(196,181,253,0.7); margin-bottom:10px;">개인 Top 10</div>
+          <div class="result-grid">
+            ${docs.map(d=>d.data).sort((a,b)=>b.points-a.points).slice(0,10).map((p, i) => {
+              const team = TEAMS.find(t => t.id === p.team);
+              return `<div class="result-row" style="border-color:${team?.color||'#7c3aed'}44;background:${team?.color||'#7c3aed'}0d;">
+                <div class="rank">${medals[i]||`${i+1}위`}</div>
+                <div class="name">${escHtml(p.nickname.replace(TEAM_PREFIX,''))}</div>
+                <div class="pts">${team?.emoji||''} ⭐ ${p.points}점</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+
+    // ── 데이터 정리 ──────────────────────────────
+    async function cleanTest(type) {
+      const prefixes = type === 'all'
+        ? [GENERAL_PREFIX, TEAM_PREFIX]
+        : type === 'general' ? [GENERAL_PREFIX] : [TEAM_PREFIX];
+
+      let deleted = 0;
+      for (const prefix of prefixes) {
+        const snap = await db.collection('participants').get();
+        const toDelete = snap.docs.filter(d => d.id.startsWith(prefix));
+        const batch = db.batch();
+        toDelete.forEach(d => { batch.delete(d.ref); deleted++; });
+        if (toDelete.length) await batch.commit();
+      }
+
+      // 팀 설정 초기화 (team 테스트 정리 시)
+      if (type === 'team' || type === 'all') {
+        await db.collection('config').doc('teamMode').set({ enabled: false, teams: [] }, { merge: true });
+      }
+
+      // 채팅 정리 (general 테스트 시)
+      if (type === 'general' || type === 'all') {
+        const chatSnap = await db.collection('chat').limit(100).get();
+        const chatToDelete = chatSnap.docs.filter(d => d.data().nickname?.startsWith(GENERAL_PREFIX));
+        if (chatToDelete.length) {
+          const batch = db.batch();
+          chatToDelete.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+          deleted += chatToDelete.length;
+        }
+      }
+
+      showToast(`✅ 테스트 데이터 ${deleted}건 삭제 완료`);
+    }
+
+    function escHtml(s) {
+      return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+  </script>
+</body>
+</html>

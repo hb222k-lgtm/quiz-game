@@ -172,7 +172,9 @@
     <div class="map-header">
       <div>
         <div class="nickname" id="header-name">로딩 중...</div>
-        <div style="font-size:12px; color:rgba(196,181,253,0.7); font-weight:600;" id="header-progress"></div>
+        <div style="font-size:12px; color:rgba(196,181,253,0.7); font-weight:600;" id="header-progress">
+          <span id="header-team-badge" style="display:none; margin-right:6px; font-weight:800;"></span>
+        </div>
       </div>
       <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
     </div>
@@ -370,13 +372,19 @@
       <div style="display:flex; gap:4px;">
         <button id="ctab-players" onclick="switchCommunityTab('players')" style="
           flex:1; padding:10px 0; border:none; border-radius:12px 12px 0 0;
-          font-size:14px; font-weight:800; cursor:pointer; transition:all 0.15s;
+          font-size:13px; font-weight:800; cursor:pointer; transition:all 0.15s;
           background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.7);">
-          👥 참가자 순위
+          👥 참가자
+        </button>
+        <button id="ctab-teams" onclick="switchCommunityTab('teams')" style="
+          flex:1; padding:10px 0; border:none; border-radius:12px 12px 0 0;
+          font-size:13px; font-weight:800; cursor:pointer; transition:all 0.15s;
+          background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.7);">
+          🏆 팀순위
         </button>
         <button id="ctab-chat" onclick="switchCommunityTab('chat')" style="
           flex:1; padding:10px 0; border:none; border-radius:12px 12px 0 0;
-          font-size:14px; font-weight:800; cursor:pointer; transition:all 0.15s;
+          font-size:13px; font-weight:800; cursor:pointer; transition:all 0.15s;
           background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.7);">
           💬 채팅
         </button>
@@ -386,6 +394,13 @@
     <!-- 참가자 목록 탭 -->
     <div id="cpanel-players" style="flex:1; overflow-y:auto; padding:12px 14px; display:none;">
       <div id="players-list" style="display:flex; flex-direction:column; gap:8px;">
+        <div style="text-align:center; padding:40px; color:#94a3b8;">불러오는 중...</div>
+      </div>
+    </div>
+
+    <!-- 팀순위 탭 -->
+    <div id="cpanel-teams" style="flex:1; overflow-y:auto; padding:12px 14px; display:none;">
+      <div id="teams-list" style="display:flex; flex-direction:column; gap:10px;">
         <div style="text-align:center; padding:40px; color:#94a3b8;">불러오는 중...</div>
       </div>
     </div>
@@ -1170,6 +1185,7 @@
       loadLocations().then(() => listenParticipant());
       loadMilestones();
       startRankListener();   // 순위 변동 알림
+      loadTeamConfig();      // 팀 배지 + 팀 설정 프리로드
       requestNotifPermission();
       listenAnnouncements();
       checkRecentAnnouncement();
@@ -1194,6 +1210,7 @@
     let _communityTab = 'players';
     let _chatUnsubscribe = null;
     let _playersUnsubscribe = null;
+    let _teamsUnsubscribe = null;
     let _chatOpen = false;
     let _chatHasNew = false;
     let _chatKnownCount = 0;   // 배지 판단용 메시지 카운트
@@ -1218,8 +1235,9 @@
       // 다시 열 때 그룹핑 포함 fresh 렌더 보장
       const el = document.getElementById('chat-messages');
       delete el.dataset.rendered;
-      // 참가자 목록 리스너만 해제 (50명 포인트 변화 때마다 재렌더 방지)
+      // 리스너 해제 (포인트 변화 때마다 재렌더 방지)
       if (_playersUnsubscribe) { _playersUnsubscribe(); _playersUnsubscribe = null; }
+      if (_teamsUnsubscribe)   { _teamsUnsubscribe();   _teamsUnsubscribe   = null; }
       // 채팅 리스너는 유지 → 패널 닫힌 동안 새 메시지 배지(!!) 감지
       // iOS viewport 위치 초기화
       requestAnimationFrame(() => {
@@ -1234,8 +1252,9 @@
       _chatOpen = (tab === 'chat');
 
       // 탭 버튼 스타일
-      ['players','chat'].forEach(t => {
+      ['players','teams','chat'].forEach(t => {
         const btn = document.getElementById('ctab-' + t);
+        if (!btn) return;
         if (t === tab) {
           btn.style.background = '#fff';
           btn.style.color = '#7c3aed';
@@ -1247,15 +1266,18 @@
 
       // 패널 표시
       document.getElementById('cpanel-players').style.display = tab === 'players' ? 'block' : 'none';
+      document.getElementById('cpanel-teams').style.display   = tab === 'teams'   ? 'block' : 'none';
       document.getElementById('cpanel-chat').style.display    = tab === 'chat'    ? 'flex'  : 'none';
 
       if (tab === 'chat') {
         document.getElementById('chat-badge').style.display = 'none';
         _chatHasNew = false;
-        // 캐시된 스냅샷으로 즉시 렌더 (Firestore 업데이트 없어도 보임)
         if (_lastChatSnap) renderChat(_lastChatSnap);
         setTimeout(() => scrollChatBottom(true), 50);
         setTimeout(() => document.getElementById('chat-input').focus(), 100);
+      }
+      if (tab === 'teams') {
+        startTeamListener();
       }
     }
 
@@ -1476,6 +1498,123 @@
       const h = String(date.getHours()).padStart(2,'0');
       const m = String(date.getMinutes()).padStart(2,'0');
       return `${h}:${m}`;
+    }
+
+    // ── 팀 순위 ────────────────────────────────────
+    let _teamConfig    = null;   // { enabled, teams: [{id,name,color,emoji}] }
+    let _myTeamRank    = null;
+    let _myTeamPts     = null;
+    let _teamRankCooldown = 0;
+
+    async function loadTeamConfig() {
+      try {
+        const snap = await db.collection('config').doc('teamMode').get();
+        _teamConfig = snap.data() || null;
+        // 헤더에 팀 배지 표시
+        if (_teamConfig?.enabled && participant?.team) {
+          const myTeam = (_teamConfig.teams || []).find(t => t.id === participant.team);
+          if (myTeam) {
+            const hdrTeam = document.getElementById('header-team-badge');
+            if (hdrTeam) {
+              hdrTeam.textContent = `${myTeam.emoji||'🏆'} ${myTeam.name}`;
+              hdrTeam.style.color = myTeam.color || '#a78bfa';
+              hdrTeam.style.display = 'inline';
+            }
+          }
+        }
+      } catch(e) {}
+    }
+
+    function startTeamListener() {
+      if (_teamsUnsubscribe) return;  // 이미 리슨 중
+      _teamsUnsubscribe = db.collection('participants').onSnapshot(async snap => {
+        // 팀 설정 없으면 로드
+        if (!_teamConfig) await loadTeamConfig();
+        if (!_teamConfig?.enabled || !_teamConfig?.teams?.length) {
+          document.getElementById('teams-list').innerHTML =
+            '<div style="text-align:center;padding:40px;color:#94a3b8;">팀 게임이 비활성화 상태예요</div>';
+          return;
+        }
+        renderTeamsList(snap, _teamConfig.teams);
+      });
+    }
+
+    function renderTeamsList(snap, teams) {
+      // 팀별 포인트 합산
+      const teamPts = {};
+      const teamMembers = {};
+      teams.forEach(t => { teamPts[t.id] = 0; teamMembers[t.id] = []; });
+
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const tid  = data.team;
+        if (!tid || !(tid in teamPts)) return;
+        teamPts[tid]     += (data.points || 0);
+        teamMembers[tid].push({ nick: d.id, points: data.points || 0 });
+      });
+
+      // 정렬
+      const sorted = [...teams].sort((a, b) => (teamPts[b.id]||0) - (teamPts[a.id]||0));
+
+      // 내 팀 순위 변동 감지
+      const myTeamId = participant?.team;
+      if (myTeamId) {
+        const myIdx   = sorted.findIndex(t => t.id === myTeamId);
+        const newRank = myIdx + 1;
+        const newPts  = teamPts[myTeamId] || 0;
+        if (_myTeamRank === null) {
+          _myTeamRank = newRank; _myTeamPts = newPts;
+        } else if (newPts !== _myTeamPts) {
+          const prevRank = _myTeamRank;
+          _myTeamRank = newRank; _myTeamPts = newPts;
+          const now = Date.now();
+          if (now >= _teamRankCooldown) {
+            const myTeam = sorted[myIdx];
+            if (newRank < prevRank) {
+              _teamRankCooldown = now + 10000;
+              if (newRank === 1)
+                showRankNotif(`🏆 ${myTeam.emoji||''} ${myTeam.name} 1위!`, '팀이 1등이에요!', 'gold');
+              else
+                showRankNotif(`⬆️ 팀 ${prevRank}위 → ${newRank}위`, `${myTeam.name} 팀 순위 상승!`, 'up');
+            } else if (newRank > prevRank) {
+              _teamRankCooldown = now + 25000;
+              showRankNotif(`💪 팀 ${prevRank}위 → ${newRank}위`, '더 열심히 달려요!', 'down');
+            }
+          }
+        }
+      }
+
+      const el = document.getElementById('teams-list');
+      if (!el) return;
+
+      const medals = ['🥇','🥈','🥉'];
+      el.innerHTML = sorted.map((team, i) => {
+        const pts     = teamPts[team.id] || 0;
+        const members = (teamMembers[team.id] || [])
+          .sort((a, b) => b.points - a.points);
+        const isMyTeam = team.id === myTeamId;
+        const medal = medals[i] || `<span style="font-size:13px;font-weight:800;color:#64748b;">${i+1}</span>`;
+        const topMembers = members.slice(0, 3).map(m =>
+          `<span style="font-size:12px;font-weight:700;color:#475569;">${escHtml(m.nick)}: ${m.points}점</span>`
+        ).join('<br>');
+
+        return `<div style="
+          background:${isMyTeam ? `linear-gradient(135deg,${team.color||'#7c3aed'}18,${team.color||'#7c3aed'}10)` : '#fff'};
+          border:${isMyTeam ? `2.5px solid ${team.color||'#7c3aed'}` : '1.5px solid #e2e8f0'};
+          border-radius:16px; padding:14px 16px;">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:${members.length ? 10 : 0}px;">
+            <div style="width:32px;text-align:center;font-size:${i<3?'22':'14'}px;flex-shrink:0;">${medal}</div>
+            <div style="font-size:28px; flex-shrink:0;">${team.emoji||'🏆'}</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:16px;font-weight:900;color:${team.color||'#1e293b'};">
+                ${escHtml(team.name)}${isMyTeam ? ' <span style="font-size:11px;background:'+team.color+';color:#fff;padding:1px 7px;border-radius:6px;">우리 팀</span>' : ''}
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-top:2px;">${members.length}명 · ⭐ ${pts.toLocaleString()}점</div>
+            </div>
+          </div>
+          ${topMembers ? `<div style="background:rgba(0,0,0,0.04);border-radius:8px;padding:8px 10px;font-size:12px;color:#475569;line-height:1.7;">${topMembers}${members.length > 3 ? `<br><span style="color:#94a3b8;">외 ${members.length-3}명</span>` : ''}</div>` : ''}
+        </div>`;
+      }).join('');
     }
 
     function escHtml(str) {
