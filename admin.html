@@ -301,6 +301,42 @@
     <!-- ── 설정 탭 ── -->
     <div class="tab-panel" id="tab-settings">
 
+      <!-- ⚡ 골든타임 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <h3 style="font-weight:700;">⚡ 골든타임 이벤트</h3>
+          <div id="gt-status-badge" style="font-size:12px; font-weight:700; padding:3px 10px; border-radius:8px; background:#f1f5f9; color:#64748b;">비활성</div>
+        </div>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">활성화하면 모든 QR·퀴즈 포인트에 배수가 적용돼요. 참가자 화면에 카운트다운이 표시돼요.</p>
+        <div id="gt-active-info" style="display:none; background:linear-gradient(135deg,#fef3c7,#fde68a); border-radius:12px; padding:12px 14px; margin-bottom:14px; text-align:center;">
+          <div style="font-size:18px; font-weight:900; color:#b45309;" id="gt-admin-countdown">--:--</div>
+          <div style="font-size:13px; color:#92400e; margin-top:2px;" id="gt-admin-label"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+          <div>
+            <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">배수</label>
+            <select id="gt-mult" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; font-weight:700; outline:none;">
+              <option value="2">⚡ ×2 (2배)</option>
+              <option value="3">🔥 ×3 (3배)</option>
+              <option value="1.5">✨ ×1.5 (1.5배)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">지속 시간</label>
+            <select id="gt-dur" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; font-weight:700; outline:none;">
+              <option value="5">5분</option>
+              <option value="10">10분</option>
+              <option value="15">15분</option>
+              <option value="30">30분</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="startGoldenTime()">⚡ 시작</button>
+          <button class="btn btn-danger"  style="flex:1;" onclick="stopGoldenTime()">■ 종료</button>
+        </div>
+      </div>
+
       <!-- 게임 기간 설정 카드 -->
       <div class="card mt-16" id="game-period-card">
         <h3 style="font-weight:700; margin-bottom:4px;">🗓️ 게임 기간 설정</h3>
@@ -799,6 +835,13 @@
       </div>
     </div>
 
+    <!-- 힌트 체인 -->
+    <div class="form-group">
+      <label>💡 다음 단서 힌트 <span style="color:#94a3b8; font-weight:400;">(선택 · 스캔 성공 후 참가자에게 표시)</span></label>
+      <textarea id="qr-hint" placeholder="예: 카페 앞 벤치 밑을 살펴봐!" rows="2"
+        style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; resize:vertical; box-sizing:border-box; font-family:inherit;"></textarea>
+    </div>
+
     <!-- 활성 기간 설정 -->
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
       <div>
@@ -1213,6 +1256,59 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── 골든타임 ─────────────────────────────────────
+let _gtTimer = null;
+
+async function startGoldenTime() {
+  const mult = parseFloat(document.getElementById('gt-mult').value) || 2;
+  const dur  = parseInt(document.getElementById('gt-dur').value) || 10;
+  const endAt = new Date(Date.now() + dur * 60 * 1000).toISOString();
+  await db.collection('config').doc('goldenTime').set({
+    active: true, multiplier: mult, endAt,
+    startedAt: new Date().toISOString(),
+    label: `⚡ ${mult}배 골든타임!`
+  });
+  showToast(`⚡ 골든타임 시작! ×${mult}, ${dur}분`);
+}
+
+async function stopGoldenTime() {
+  await db.collection('config').doc('goldenTime').set({ active: false });
+  showToast('골든타임 종료됐어요');
+}
+
+function listenGoldenTime() {
+  db.collection('config').doc('goldenTime').onSnapshot(snap => {
+    const d = snap.data();
+    const badge  = document.getElementById('gt-status-badge');
+    const info   = document.getElementById('gt-active-info');
+    const lblEl  = document.getElementById('gt-admin-label');
+    if (!badge) return;
+    clearInterval(_gtTimer);
+    if (!d?.active || new Date(d.endAt) < new Date()) {
+      badge.textContent = '비활성'; badge.style.background = '#f1f5f9'; badge.style.color = '#64748b';
+      if (info) info.style.display = 'none';
+      return;
+    }
+    badge.textContent = `⚡ 진행 중 ×${d.multiplier}`;
+    badge.style.background = '#fef3c7'; badge.style.color = '#b45309';
+    if (info) { info.style.display = 'block'; if (lblEl) lblEl.textContent = d.label || '골든타임 진행 중'; }
+    const tick = () => {
+      const rem = Math.max(0, new Date(d.endAt) - new Date());
+      const m = String(Math.floor(rem/60000)).padStart(2,'0');
+      const s = String(Math.floor((rem%60000)/1000)).padStart(2,'0');
+      const el = document.getElementById('gt-admin-countdown');
+      if (el) el.textContent = rem > 0 ? `${m}:${s} 남음` : '종료';
+      if (rem <= 0) {
+        clearInterval(_gtTimer);
+        badge.textContent = '비활성'; badge.style.background = '#f1f5f9'; badge.style.color = '#64748b';
+        if (info) info.style.display = 'none';
+      }
+    };
+    tick();
+    _gtTimer = setInterval(tick, 1000);
+  });
+}
+
 // ── 탭 전환 ──────────────────────────────────────
 function switchTab(id, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1228,6 +1324,7 @@ function switchTab(id, btn) {
 function initAdmin() {
   loadGamePeriod();
   loadMilestonesAdmin();
+  listenGoldenTime();
   listenLeaderboard();
   listenLocations();
   listenQuizBank();
@@ -1295,7 +1392,7 @@ function renderLeaderboard(list) {
       <div class="rank-row">
         <div class="rank-num ${rankClass}">${medal}</div>
         <div class="rank-info">
-          <div class="rank-name">${escHtml(p.nickname)}</div>
+          <div class="rank-name">${escHtml(p.nickname)}<span style="margin-left:5px;font-size:13px;">${(p.badges||[]).map(b=>ACHIEVEMENTS[b]?.emoji||'').join('')}</span></div>
           <div class="rank-detail">장소 ${locs}곳 완료 · QR ${qrs}개 스캔</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -1966,6 +2063,7 @@ function openQRModal() {
   document.getElementById('qr-quiz-points').value = '100';
   document.getElementById('qr-team-required').value = '3';
   document.getElementById('qr-team-bonus').value = '200';
+  document.getElementById('qr-hint').value = '';
   document.getElementById('qr-start-at').value = '';
   document.getElementById('qr-end-at').value = '';
   document.querySelector('input[name="qr-type"][value="points"]').checked = true;
@@ -1994,6 +2092,10 @@ async function generateQR() {
     // double / half / nothing — 포인트 필드 없음
     data = { label, type, enabled: true, usedBy: [] };
   }
+
+  // 힌트 (선택)
+  const hint = document.getElementById('qr-hint').value.trim();
+  if (hint) data.hint = hint;
 
   // 활성 기간 저장 (빈칸이면 null → 제한 없음)
   const startAt = document.getElementById('qr-start-at').value || null;
@@ -2036,6 +2138,7 @@ function showQRImage(id) {
     document.getElementById('qr-team-required').value = qr.requiredMembers || 3;
     document.getElementById('qr-team-bonus').value = qr.teamBonusPoints || 200;
   }
+  document.getElementById('qr-hint').value = qr.hint || '';
   document.getElementById('qr-start-at').value = qr.startAt || '';
   document.getElementById('qr-end-at').value   = qr.endAt   || '';
 

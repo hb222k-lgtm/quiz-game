@@ -108,7 +108,57 @@ function showToast(msg, duration = 2500) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 
-// 고유 ID 생성 (10명 동시 생성 시 충돌 방지)
+// ── 골든타임 배수 조회 ────────────────────────────
+async function getGoldenMultiplier() {
+  if (!window.db) return 1;
+  try {
+    const snap = await db.collection('config').doc('goldenTime').get();
+    const d = snap.data();
+    if (!d?.active) return 1;
+    if (new Date(d.endAt) < new Date()) return 1; // 만료
+    return parseFloat(d.multiplier) || 1;
+  } catch(e) { return 1; }
+}
+
+// ── 개인 업적 목록 ────────────────────────────────
+const ACHIEVEMENTS = {
+  first_scan:  { emoji:'🎯', name:'첫 스캔',    desc:'QR 코드 첫 스캔' },
+  qr_hunter:   { emoji:'📷', name:'QR 헌터',    desc:'QR 5개 스캔' },
+  explorer:    { emoji:'🗺️', name:'탐험가',     desc:'장소 3곳 완료' },
+  rich:        { emoji:'💰', name:'큰 손',       desc:'획득 포인트 300점 돌파' },
+  golden:      { emoji:'⚡', name:'골든러너',   desc:'골든타임 중 QR 스캔' },
+  team_player: { emoji:'🤝', name:'팀플레이어', desc:'팀 미션 기여' },
+};
+
+// ── 업적 체크 및 자동 지급 ────────────────────────
+async function checkAndAwardBadges(nickname, extra = []) {
+  if (!window.db) return [];
+  try {
+    const snap = await db.collection('participants').doc(nickname).get();
+    const p = snap.data() || {};
+    const existing = p.badges || [];
+    const scanned  = (p.scannedQRs || []).length;
+    const locs     = (p.completedLocations || []).length;
+    const earned   = p.earnedPoints || 0;
+
+    const toAdd = [];
+    const chk = (key, cond) => { if (cond && !existing.includes(key) && !toAdd.includes(key)) toAdd.push(key); };
+    chk('first_scan', scanned >= 1);
+    chk('qr_hunter',  scanned >= 5);
+    chk('explorer',   locs >= 3);
+    chk('rich',       earned >= 300);
+    extra.forEach(k => { if (k && !existing.includes(k) && !toAdd.includes(k)) toAdd.push(k); });
+
+    if (toAdd.length) {
+      await db.collection('participants').doc(nickname).update({
+        badges: firebase.firestore.FieldValue.arrayUnion(...toAdd)
+      });
+    }
+    return toAdd; // 새로 받은 배지 목록
+  } catch(e) { return []; }
+}
+
+// ── 고유 ID 생성 (10명 동시 생성 시 충돌 방지)
 function genId() {
   const t = Date.now().toString(36);
   const r1 = Math.random().toString(36).slice(2, 9);

@@ -179,6 +179,11 @@
       <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
     </div>
 
+    <!-- 골든타임 배너 -->
+    <div id="golden-banner" style="display:none; background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff; padding:8px 16px; text-align:center; font-size:14px; font-weight:800; letter-spacing:0.02em;">
+      ⚡ 골든타임! ×<span id="golden-mult">2</span> 포인트 배율 &nbsp;|&nbsp; 남은 시간 <span id="golden-countdown">00:00</span>
+    </div>
+
     <!-- 지도 -->
     <div id="map-container" style="flex:1; position:relative;">
       <div id="map"></div>
@@ -1198,6 +1203,36 @@
       requestNotifPermission();
       listenAnnouncements();
       checkRecentAnnouncement();
+      listenGoldenTimeBanner(); // ⚡ 골든타임 배너
+    }
+
+    // ── 골든타임 배너 리스너 ────────────────────────
+    let _goldenCountdownTimer = null;
+    function listenGoldenTimeBanner() {
+      if (!window.db) return;
+      db.collection('config').doc('goldenTime').onSnapshot(snap => {
+        const d = snap.data();
+        const banner = document.getElementById('golden-banner');
+        if (_goldenCountdownTimer) { clearInterval(_goldenCountdownTimer); _goldenCountdownTimer = null; }
+
+        if (!d?.active || new Date(d.endAt) < new Date()) {
+          banner.style.display = 'none';
+          return;
+        }
+
+        document.getElementById('golden-mult').textContent = d.multiplier || 2;
+        banner.style.display = 'block';
+
+        function updateCountdown() {
+          const left = Math.max(0, new Date(d.endAt) - new Date());
+          if (left === 0) { banner.style.display = 'none'; return; }
+          const m = String(Math.floor(left / 60000)).padStart(2,'0');
+          const s = String(Math.floor((left % 60000) / 1000)).padStart(2,'0');
+          document.getElementById('golden-countdown').textContent = m + ':' + s;
+        }
+        updateCountdown();
+        _goldenCountdownTimer = setInterval(updateCountdown, 1000);
+      });
     }
 
     // Leaflet 로드 확인 후 시작 (CDN 실패 시 unpkg로 재시도)
@@ -1360,7 +1395,7 @@
           <div style="flex:1;min-width:0;">
             <div style="font-size:15px;font-weight:800;color:#1e293b;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              ${escHtml(p.nick)}${isMe ? ' <span style="font-size:11px;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:6px;">나</span>' : ''}
+              ${escHtml(p.nick)}${isMe ? ' <span style="font-size:11px;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:6px;">나</span>' : ''}${(p.badges||[]).length ? '<span style="margin-left:4px;font-size:13px;">' + (p.badges||[]).map(b=>ACHIEVEMENTS[b]?.emoji||'').join('') + '</span>' : ''}
             </div>
             <div style="font-size:12px;color:#64748b;margin-top:2px;">
               완료 ${(p.completedLocations||[]).length}곳 · ⭐ ${p.points || 0}점

@@ -109,6 +109,12 @@
       <button class="btn btn-outline" onclick="resetScanner()">🔄 다시 스캔하기</button>
     </div>
 
+    <!-- QR 힌트 체인 -->
+    <div id="hint-box" style="display:none; margin-top:14px; background:linear-gradient(135deg,#fef3c7,#fffbeb); border:2px solid #f59e0b; border-radius:16px; padding:14px 16px;">
+      <div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:6px;">🔗 다음 힌트</div>
+      <div id="hint-text" style="font-size:15px;font-weight:600;color:#1e293b;line-height:1.6;"></div>
+    </div>
+
     <div class="card mt-16 tips-card">
       <p>
         📌 QR 코드는 1인당 1회만 스캔 가능해요<br>
@@ -330,39 +336,56 @@
           });
 
           if (res.isComplete) {
-            // 팀 전원에게 보너스 지급
+            // 팀 전원에게 보너스 지급 (골든타임 배율 적용)
+            const mult = await getGoldenMultiplier();
+            const finalBonus = Math.round(bonus * mult);
             const teamSnap = await db.collection('participants').where('team', '==', myTeam).get();
             const chunkSize = 500;
             for (let ci = 0; ci < teamSnap.docs.length; ci += chunkSize) {
               const batch = db.batch();
               teamSnap.docs.slice(ci, ci + chunkSize).forEach(d => {
                 batch.update(d.ref, {
-                  points:       firebase.firestore.FieldValue.increment(bonus),
-                  earnedPoints: firebase.firestore.FieldValue.increment(bonus),
+                  points:       firebase.firestore.FieldValue.increment(finalBonus),
+                  earnedPoints: firebase.firestore.FieldValue.increment(finalBonus),
                 });
               });
               await batch.commit();
             }
-            showResult(true, `🎉 팀 미션 완료! ${res.required}명 모두 스캔!\n팀 전원 +${bonus}점 지급됐어요!`);
+            const goldenMsg = mult > 1 ? ` (⚡ 골든타임 ×${mult})` : '';
+            showResult(true, `🎉 팀 미션 완료! ${res.required}명 모두 스캔!\n팀 전원 +${finalBonus}점 지급됐어요!${goldenMsg}`);
+            showHintBox(qrData.hint);
+            const extras = ['team_player'];
+            if (mult > 1) extras.push('golden');
+            checkAndAwardBadges(nickname, extras).then(newBadges => showNewBadges(newBadges));
           } else {
             showResult(true, `✅ 스캔 완료! 우리 팀 ${res.count}/${res.required}명\n${res.required - res.count}명 더 스캔하면 팀 전원 +${bonus}점!`);
+            showHintBox(qrData.hint);
+            checkAndAwardBadges(nickname, ['team_player']).then(newBadges => showNewBadges(newBadges));
           }
 
         } else {
           // 💰 포인트 즉시 지급 — 트랜잭션 내에서 usedBy 재확인 (동시 스캔 중복 방지)
+          const mult = await getGoldenMultiplier();
+          const basePts = qrData.points || 0;
+          const pts = Math.round(basePts * mult);
           await db.runTransaction(async tx => {
             const pRef = db.collection('participants').doc(nickname);
             const qRef = db.collection('qrcodes').doc(code);
             const qSnap = await tx.get(qRef);
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             tx.update(pRef, {
-              points:       firebase.firestore.FieldValue.increment(qrData.points),
-              earnedPoints: firebase.firestore.FieldValue.increment(qrData.points),
+              points:       firebase.firestore.FieldValue.increment(pts),
+              earnedPoints: firebase.firestore.FieldValue.increment(pts),
               scannedQRs:   firebase.firestore.FieldValue.arrayUnion(code)
             });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
-          showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${qrData.points}점 획득!`);
+          const goldenMsg = mult > 1 ? ` (⚡ 골든타임 ×${mult})` : '';
+          showResult(true, `"${qrData.label || 'QR 코드'}" 스캔 완료! +${pts}점 획득!${goldenMsg}`);
+          showHintBox(qrData.hint);
+          const extras = [];
+          if (mult > 1) extras.push('golden');
+          checkAndAwardBadges(nickname, extras).then(newBadges => showNewBadges(newBadges));
         }
       } catch (e) {
         if (e.message === 'ALREADY_USED') {
@@ -475,7 +498,9 @@
         btns[selected].classList.add('correct');
 
         try {
-          const pts = parseInt(quiz.points) || 0;
+          const basePts = parseInt(quiz.points) || 0;
+          const mult = await getGoldenMultiplier();
+          const pts = Math.round(basePts * mult);
           await db.runTransaction(async tx => {
             const qRef = db.collection('qrcodes').doc(qrData.id);
             const qSnap = await tx.get(qRef);
@@ -492,12 +517,17 @@
               { [quiz.id]: firebase.firestore.FieldValue.increment(1) }, { merge: true }
             ).catch(() => {});
           }
+          const goldenMsg = mult > 1 ? ` (⚡×${mult})` : '';
           const resultEl = document.getElementById('qr-result');
           resultEl.style.display = 'block';
           resultEl.className = 'qr-result show success';
-          resultEl.innerHTML = `🎉 정답! +${pts}점 획득!`
+          resultEl.innerHTML = `🎉 정답! +${pts}점 획득!${goldenMsg}`
             + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
           document.getElementById('scan-again-wrap').style.display = 'block';
+          showHintBox(qrData.hint);
+          const extras = [];
+          if (mult > 1) extras.push('golden');
+          checkAndAwardBadges(nickname, extras).then(newBadges => showNewBadges(newBadges));
         } catch (e) {
           if (e.message === 'ALREADY_USED') showResult(false, '이미 처리된 QR 코드예요.');
           else showResult(false, '오류가 발생했어요: ' + e.message);
@@ -549,6 +579,24 @@
       document.getElementById('scan-again-wrap').style.display = 'block';
     }
 
+    function showHintBox(hint) {
+      const box = document.getElementById('hint-box');
+      if (!hint || !box) return;
+      document.getElementById('hint-text').textContent = hint;
+      box.style.display = 'block';
+    }
+
+    function showNewBadges(newBadges) {
+      if (!newBadges || !newBadges.length) return;
+      newBadges.forEach((key, i) => {
+        const info = ACHIEVEMENTS[key];
+        if (!info) return;
+        setTimeout(() => {
+          showToast(`🏅 배지 획득! ${info.emoji} ${info.name} — ${info.desc}`);
+        }, i * 1200);
+      });
+    }
+
     function resetScanner() {
       stopQRTimer();
       const resultEl = document.getElementById('qr-result');
@@ -556,6 +604,7 @@
       resultEl.style.display = 'none';
       document.getElementById('qr-quiz-wrap').style.display = 'none';
       document.getElementById('scan-again-wrap').style.display = 'none';
+      document.getElementById('hint-box').style.display = 'none';
       currentQRCode = null;
       quizAnswered = false;
       qrAttempts = 0;

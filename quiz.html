@@ -372,10 +372,13 @@
       if (selected === correct) {
         answered = true;
         btns[selected].classList.add('correct');
-        const earnedPoints = attempts > 0 ? Math.floor(points / 2) : points;
+        const basePts = attempts > 0 ? Math.floor(points / 2) : points;
+        const mult = await getGoldenMultiplier();
+        const earnedPoints = Math.round(basePts * mult);
+        const goldenMsg = mult > 1 ? ` (⚡ 골든타임 ×${mult})` : '';
         resultBox.innerHTML = (attempts > 0
-          ? `🎉 정답! +${earnedPoints}점 획득! (2번째 도전 — 절반 점수)`
-          : `🎉 정답! +${earnedPoints}점 획득!`)
+          ? `🎉 정답! +${earnedPoints}점 획득! (2번째 도전 — 절반 점수)${goldenMsg}`
+          : `🎉 정답! +${earnedPoints}점 획득!${goldenMsg}`)
           + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
         resultBox.className = 'result-box show result-correct';
 
@@ -386,6 +389,16 @@
         };
         await db.collection('participants').doc(nickname).update(updates);
         safeIncrementAssignment(locId, currentQuestion?.id);
+        // 업적 체크
+        const extras = [];
+        if (mult > 1) extras.push('golden');
+        checkAndAwardBadges(nickname, extras).then(newBadges => {
+          newBadges.forEach((key, i) => {
+            const info = ACHIEVEMENTS[key];
+            if (!info) return;
+            setTimeout(() => showToast(`🏅 배지 획득! ${info.emoji} ${info.name} — ${info.desc}`), i * 1200);
+          });
+        });
         autoRedirect();
 
       } else {
