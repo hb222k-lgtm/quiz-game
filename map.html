@@ -400,6 +400,15 @@
 
     <!-- 팀순위 탭 -->
     <div id="cpanel-teams" style="flex:1; overflow-y:auto; padding:12px 14px; display:none;">
+      <!-- 내 팀 변경 버튼 -->
+      <div id="my-team-change-wrap" style="display:none; margin-bottom:12px;">
+        <button onclick="showTeamChangeModal()" style="
+          width:100%; padding:11px; border:1.5px dashed #a78bfa;
+          border-radius:12px; background:rgba(124,58,237,0.07);
+          color:#7c3aed; font-size:13px; font-weight:700; cursor:pointer;">
+          🔄 내 팀 변경하기
+        </button>
+      </div>
       <div id="teams-list" style="display:flex; flex-direction:column; gap:10px;">
         <div style="text-align:center; padding:40px; color:#94a3b8;">불러오는 중...</div>
       </div>
@@ -1278,6 +1287,9 @@
       }
       if (tab === 'teams') {
         startTeamListener();
+        // 팀 변경 버튼: 팀 게임 활성 시만 표시
+        const wrap = document.getElementById('my-team-change-wrap');
+        if (wrap) wrap.style.display = _teamConfig?.enabled ? 'block' : 'none';
       }
     }
 
@@ -1523,6 +1535,84 @@
           }
         }
       } catch(e) {}
+    }
+
+    // ── 팀 변경 모달 ────────────────────────────────
+    async function showTeamChangeModal() {
+      if (!_teamConfig?.enabled || !_teamConfig?.teams?.length) {
+        showToast('팀 게임이 활성화되지 않았어요'); return;
+      }
+      // 기존 모달 제거
+      const old = document.getElementById('team-change-modal');
+      if (old) old.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'team-change-modal';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:flex-end;';
+      modal.innerHTML = `
+        <div style="width:100%;background:#fff;border-radius:24px 24px 0 0;padding:20px 20px max(36px,env(safe-area-inset-bottom));max-height:85vh;overflow-y:auto;">
+          <div style="width:40px;height:4px;background:#e2e8f0;border-radius:2px;margin:0 auto 16px;"></div>
+          <h3 style="font-size:18px;font-weight:900;margin-bottom:4px;">🔄 팀 변경</h3>
+          <p style="font-size:13px;color:#64748b;margin-bottom:16px;">이동할 팀을 선택해주세요</p>
+          <div id="team-change-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+          <button onclick="document.getElementById('team-change-modal').remove()"
+            style="width:100%;margin-top:16px;padding:13px;background:#f1f5f9;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;color:#64748b;">
+            취소
+          </button>
+        </div>`;
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      document.body.appendChild(modal);
+
+      // 팀별 인원 수 로드
+      const pSnap = await db.collection('participants').get();
+      const counts = {};
+      _teamConfig.teams.forEach(t => counts[t.id] = 0);
+      pSnap.docs.forEach(d => { const t = d.data().team; if (t in counts) counts[t]++; });
+
+      const list = document.getElementById('team-change-list');
+      if (!list) return;
+      const myTeamId = participant?.team;
+      list.innerHTML = _teamConfig.teams.map(t => `
+        <button onclick="changeMyTeam('${t.id}')" style="
+          display:flex;align-items:center;gap:14px;padding:14px 16px;
+          border:2.5px solid ${t.id === myTeamId ? t.color : '#e2e8f0'};
+          border-radius:14px;background:${t.id === myTeamId ? t.color+'18' : '#fff'};
+          cursor:pointer;text-align:left;width:100%;font-family:inherit;">
+          <span style="font-size:32px;">${t.emoji||'🏆'}</span>
+          <div style="flex:1;">
+            <div style="font-size:16px;font-weight:800;color:${t.color};">${escHtml(t.name)}</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:2px;">${counts[t.id]}명${t.id===myTeamId?' · 현재 내 팀':''}</div>
+          </div>
+          ${t.id === myTeamId ? '<span style="font-size:18px;">✅</span>' : ''}
+        </button>
+      `).join('');
+    }
+
+    async function changeMyTeam(newTeamId) {
+      const modal = document.getElementById('team-change-modal');
+      if (modal) modal.remove();
+      if (!participant?.nickname) return;
+      const myTeam = participant?.team;
+      if (newTeamId === myTeam) { showToast('이미 해당 팀이에요'); return; }
+
+      try {
+        await db.collection('participants').doc(participant.nickname).update({ team: newTeamId });
+        // 로컬 participant 업데이트
+        participant.team = newTeamId;
+        // 헤더 배지 업데이트
+        const newTeam = (_teamConfig.teams||[]).find(t => t.id === newTeamId);
+        if (newTeam) {
+          const badge = document.getElementById('header-team-badge');
+          if (badge) {
+            badge.textContent = `${newTeam.emoji||'🏆'} ${newTeam.name}`;
+            badge.style.color = newTeam.color || '#a78bfa';
+            badge.style.display = 'inline';
+          }
+        }
+        showToast(`✅ ${newTeam?.name || newTeamId} 팀으로 이동했어요!`);
+      } catch(e) {
+        showToast('팀 변경 실패: ' + e.message);
+      }
     }
 
     function startTeamListener() {
