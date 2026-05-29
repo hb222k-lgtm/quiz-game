@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>QR 코드 인쇄</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/config.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #f8fafc; }
+
+    .toolbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: #1e1040; padding: 12px 20px;
+      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    }
+    .toolbar h1 { color: #fff; font-size: 16px; font-weight: 800; flex: 1; }
+    .toolbar button {
+      padding: 8px 18px; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .btn-print { background: #7c3aed; color: #fff; }
+    .btn-back  { background: rgba(255,255,255,0.12); color: #e9d5ff; }
+
+    .filter-bar {
+      position: fixed; top: 56px; left: 0; right: 0; z-index: 99;
+      background: #fff; border-bottom: 1px solid #e2e8f0;
+      padding: 10px 20px; display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .filter-bar label { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .filter-bar input[type=checkbox] { width: 16px; height: 16px; accent-color: #7c3aed; cursor: pointer; }
+    .filter-bar select {
+      padding: 5px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+      font-size: 13px; font-weight: 600; outline: none; cursor: pointer;
+    }
+
+    .grid-wrap { margin-top: 110px; padding: 20px; }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: repeat(var(--cols, 3), 1fr);
+      gap: 16px;
+    }
+
+    .qr-card {
+      background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
+      padding: 16px 12px; text-align: center;
+      break-inside: avoid;
+    }
+    .qr-card .qr-img { display: flex; justify-content: center; margin-bottom: 10px; }
+    .qr-card .qr-label {
+      font-size: 14px; font-weight: 800; color: #1e293b;
+      margin-bottom: 4px; word-break: break-word; line-height: 1.4;
+    }
+    .qr-card .qr-type-badge {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 6px; margin-bottom: 4px;
+    }
+    .qr-card .qr-code-text {
+      font-size: 10px; color: #94a3b8; font-family: monospace; word-break: break-all;
+    }
+    .qr-card .qr-meta {
+      font-size: 12px; color: #64748b; margin-top: 4px;
+    }
+
+    .empty-msg {
+      text-align: center; padding: 60px; font-size: 15px; color: #94a3b8;
+      grid-column: 1 / -1;
+    }
+
+    @media print {
+      .toolbar, .filter-bar { display: none !important; }
+      .grid-wrap { margin-top: 0; padding: 8px; }
+      body { background: #fff; }
+      .qr-card {
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        padding: 10px 8px;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>🖨️ QR 코드 인쇄</h1>
+  <button class="btn-back" onclick="history.back()">← 뒤로</button>
+  <button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>
+</div>
+
+<div class="filter-bar">
+  <label><input type="checkbox" id="chk-points"  checked onchange="renderGrid()"> 💰 포인트</label>
+  <label><input type="checkbox" id="chk-minus"   checked onchange="renderGrid()"> 📉 차감</label>
+  <label><input type="checkbox" id="chk-double"  checked onchange="renderGrid()"> 🎰 2배</label>
+  <label><input type="checkbox" id="chk-half"    checked onchange="renderGrid()"> ✂️ 절반</label>
+  <label><input type="checkbox" id="chk-nothing" checked onchange="renderGrid()"> 💨 꽝</label>
+  <label><input type="checkbox" id="chk-quiz"    checked onchange="renderGrid()"> ❓ 퀴즈</label>
+  <label><input type="checkbox" id="chk-team_mission" checked onchange="renderGrid()"> 🤝 팀미션</label>
+  <select id="col-select" onchange="document.querySelector('.qr-grid').style.setProperty('--cols',this.value)">
+    <option value="2">2열</option>
+    <option value="3" selected>3열</option>
+    <option value="4">4열</option>
+  </select>
+  <span id="qr-count" style="font-size:13px;color:#64748b;font-weight:600;margin-left:4px;"></span>
+</div>
+
+<div class="grid-wrap">
+  <div class="qr-grid" id="qr-grid">
+    <div class="empty-msg">불러오는 중...</div>
+  </div>
+</div>
+
+<script>
+const TYPE_INFO = {
+  points:       { label: '💰 포인트 지급', bg: '#fef9c3', color: '#b45309' },
+  minus:        { label: '📉 포인트 차감', bg: '#fee2e2', color: '#dc2626' },
+  double:       { label: '🎰 점수 2배',    bg: '#ede9fe', color: '#7c3aed' },
+  half:         { label: '✂️ 점수 절반',   bg: '#fff7ed', color: '#ea580c' },
+  nothing:      { label: '💨 꽝',          bg: '#f1f5f9', color: '#64748b' },
+  quiz:         { label: '❓ 퀴즈',        bg: '#ede9fe', color: '#6d28d9' },
+  team_mission: { label: '🤝 팀 미션',     bg: '#e0f2fe', color: '#0369a1' },
+};
+
+let allQRs = [];
+
+async function loadQRs() {
+  const snap = await db.collection('qrcodes').orderBy('createdAt', 'desc').get();
+  allQRs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderGrid();
+}
+
+function getCheckedTypes() {
+  return Object.keys(TYPE_INFO).filter(t => {
+    const el = document.getElementById('chk-' + t);
+    return el ? el.checked : true;
+  });
+}
+
+function renderGrid() {
+  const checked = getCheckedTypes();
+  const list = allQRs.filter(q => checked.includes(q.type || 'points'));
+  const grid = document.getElementById('qr-grid');
+  document.getElementById('qr-count').textContent = `총 ${list.length}개`;
+
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty-msg">표시할 QR 코드가 없어요</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  list.forEach(qr => {
+    const info = TYPE_INFO[qr.type] || TYPE_INFO.points;
+    const url  = GAME_CONFIG.SITE_URL + `qr-scan.html?code=${qr.id}`;
+    const card = document.createElement('div');
+    card.className = 'qr-card';
+
+    // 메타 텍스트 (타입별)
+    let meta = '';
+    if (qr.type === 'points') meta = `+${qr.points || 0}점`;
+    else if (qr.type === 'minus') meta = `-${qr.points || 0}점`;
+    else if (qr.type === 'quiz') meta = `정답 +${qr.quizPoints || 100}점`;
+    else if (qr.type === 'team_mission') meta = `${qr.requiredMembers||3}명 스캔 → 팀 전원 +${qr.teamBonusPoints||200}점`;
+
+    // 유효 기간
+    let period = '';
+    if (qr.startAt || qr.endAt) {
+      const fmt = s => s ? new Date(s).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '?';
+      period = `${fmt(qr.startAt)} ~ ${fmt(qr.endAt)}`;
+    }
+
+    card.innerHTML = `
+      <div class="qr-img" id="qr-img-${qr.id}"></div>
+      <div class="qr-label">${escHtml(qr.label || 'QR 코드')}</div>
+      <div class="qr-type-badge" style="background:${info.bg};color:${info.color};">${info.label}</div>
+      ${meta  ? `<div class="qr-meta">${meta}</div>` : ''}
+      ${period? `<div class="qr-meta" style="font-size:11px;color:#94a3b8;">⏰ ${period}</div>` : ''}
+      <div class="qr-code-text">${qr.id}</div>
+    `;
+    grid.appendChild(card);
+
+    // QR 렌더링
+    setTimeout(() => {
+      const el = document.getElementById('qr-img-' + qr.id);
+      if (el) new QRCode(el, {
+        text: url, width: 160, height: 160,
+        colorDark: '#1e293b', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    }, 0);
+  });
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadQRs();
+</script>
+</body>
+</html>

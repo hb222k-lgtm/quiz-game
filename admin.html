@@ -206,6 +206,10 @@
         <div class="stat-box"><div class="val" id="stat-players">0</div><div class="lbl">참가자 수</div></div>
         <div class="stat-box"><div class="val" id="stat-locs">0</div><div class="lbl">활성 장소</div></div>
       </div>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button class="btn btn-outline" style="flex:1; font-size:13px;" onclick="exportResultsCSV()">📥 결과 CSV 내보내기</button>
+        <button class="btn btn-outline" style="flex:1; font-size:13px;" onclick="window.open('qr-print.html','_blank')">🖨️ QR 일괄 인쇄</button>
+      </div>
       <div id="leaderboard-list"></div>
     </div>
 
@@ -2051,6 +2055,41 @@ async function deleteQRCode(id) {
   if (!confirm('이 QR 코드를 삭제할까요?')) return;
   await db.collection('qrcodes').doc(id).delete();
   showToast('QR 코드가 삭제됐어요');
+}
+
+// ── 결과 CSV 내보내기 ─────────────────────────────
+function exportResultsCSV() {
+  const data = participantsData;
+  if (!data.length) { showToast('참가자가 없어요'); return; }
+
+  // 팀 이름 조회
+  const teamMap = {};
+  (_teamModeData?.teams || []).forEach(t => teamMap[t.id] = `${t.emoji||''} ${t.name}`);
+
+  const headers = ['순위', '닉네임', '팀', '포인트', '획득포인트', '완료장소', 'QR스캔수'];
+  const rows = data.map((p, i) => [
+    i + 1,
+    p.nickname || p.id,
+    teamMap[p.team] || (p.team || '없음'),
+    p.points || 0,
+    p.earnedPoints || 0,
+    (p.completedLocations || []).length,
+    (p.scannedQRs || []).length,
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `퀴즈게임_결과_${dateStr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`📥 ${data.length}명 결과를 CSV로 내보냈어요!`);
 }
 
 // ── 설정 ─────────────────────────────────────────

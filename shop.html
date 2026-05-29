@@ -279,44 +279,42 @@
       if (item.stock === 0)      { showToast('품절된 상품이에요'); return; }
 
       try {
-        // 서버 최신 가격·재고 재확인
-        const iSnap = await db.collection('shop_items').doc(item.id).get();
-        const pSnap = await db.collection('participants').doc(nickname).get();
-        if (!iSnap.exists) throw new Error('상품 없음');
-        if (!pSnap.exists) throw new Error('참가자 없음');
-        const serverPrice = iSnap.data().price || 0;
-        const stock       = iSnap.data().stock;
-        const pts         = pSnap.data().points || 0;
-        if (pts < serverPrice) throw new Error('포인트 부족');
-        if (stock === 0)       throw new Error('품절');
+        // 트랜잭션으로 재고·포인트 원자적 처리 (동시 구매 race condition 방지)
+        let finalPrice = item.price;
+        await db.runTransaction(async tx => {
+          const iRef  = db.collection('shop_items').doc(item.id);
+          const pRef  = db.collection('participants').doc(nickname);
+          const [iSnap, pSnap] = await Promise.all([tx.get(iRef), tx.get(pRef)]);
 
-        // 배치 쓰기 (카카오톡 브라우저 호환)
-        const batch = db.batch();
-        batch.update(db.collection('participants').doc(nickname), {
-          points: firebase.firestore.FieldValue.increment(-serverPrice),
+          if (!iSnap.exists) throw new Error('상품 없음');
+          if (!pSnap.exists) throw new Error('참가자 없음');
+
+          finalPrice      = iSnap.data().price || 0;
+          const stock     = iSnap.data().stock;
+          const pts       = pSnap.data().points || 0;
+
+          if (pts < finalPrice) throw new Error('포인트가 부족해요');
+          if (stock === 0)      throw new Error('품절된 상품이에요');
+
+          tx.update(pRef, { points: firebase.firestore.FieldValue.increment(-finalPrice) });
+          if (stock > 0) {
+            tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
+          }
         });
-        if (stock > 0) {
-          batch.update(db.collection('shop_items').doc(item.id), {
-            stock: firebase.firestore.FieldValue.increment(-1),
-          });
-        }
-        await batch.commit();
 
-        // 주문 기록 (실패 시 재시도)
+        // 주문 기록 (트랜잭션 밖)
         const orderData = {
           nickname,
-          itemId:    item.id,
-          itemName:  item.name,
-          emoji:     item.emoji || '🎁',
-          price:     serverPrice,
-          confirmed: false,
+          itemId:      item.id,
+          itemName:    item.name,
+          emoji:       item.emoji || '🎁',
+          price:       finalPrice,
+          confirmed:   false,
           purchasedAt: new Date().toISOString(),
         };
-        try {
-          await db.collection('orders').add(orderData);
-        } catch (_) {
-          setTimeout(() => db.collection('orders').add(orderData).catch(() => {}), 2000);
-        }
+        db.collection('orders').add(orderData).catch(() =>
+          setTimeout(() => db.collection('orders').add(orderData).catch(() => {}), 2000)
+        );
 
         showToast(`🎉 ${item.name} 구매 완료! 판매자에게 수령하세요`);
       } catch (e) {

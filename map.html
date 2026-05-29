@@ -1595,6 +1595,32 @@
       const myTeam = participant?.team;
       if (newTeamId === myTeam) { showToast('이미 해당 팀이에요'); return; }
 
+      // 팀 미션 기여 여부 확인 후 경고
+      const newTeamName = (_teamConfig?.teams||[]).find(t => t.id === newTeamId)?.name || newTeamId;
+      const oldTeamName = (_teamConfig?.teams||[]).find(t => t.id === myTeam)?.name || '';
+      const warned = await new Promise(resolve => {
+        const w = document.createElement('div');
+        w.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px;';
+        w.innerHTML = `
+          <div style="background:#fff;border-radius:20px;padding:24px;max-width:320px;width:100%;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">🔄</div>
+            <h3 style="font-size:17px;font-weight:900;margin-bottom:8px;">팀을 변경할까요?</h3>
+            <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
+              <b>${oldTeamName}</b> → <b>${newTeamName}</b><br>
+              현재 팀의 미션 기여 기록은 유지되지 않아요.
+            </p>
+            <div style="display:flex;gap:8px;">
+              <button onclick="this.closest('div[style]').remove();window._teamChangeResolve(false)"
+                style="flex:1;padding:12px;background:#f1f5f9;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">취소</button>
+              <button onclick="this.closest('div[style]').remove();window._teamChangeResolve(true)"
+                style="flex:1;padding:12px;background:#7c3aed;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">변경</button>
+            </div>
+          </div>`;
+        window._teamChangeResolve = resolve;
+        document.body.appendChild(w);
+      });
+      if (!warned) return;
+
       try {
         await db.collection('participants').doc(participant.nickname).update({ team: newTeamId });
         // 로컬 participant 업데이트
