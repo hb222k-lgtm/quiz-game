@@ -23,12 +23,25 @@
   <style>
     /* 클러스터 스타일 커스텀 */
     .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
-      background-color: rgba(124, 58, 237, 0.25) !important;
+      background-color: rgba(124, 58, 237, 0.2) !important;
     }
     .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
-      background-color: rgba(124, 58, 237, 0.75) !important;
-      color: #fff !important; font-weight: 800 !important;
+      background-color: rgba(124, 58, 237, 0.85) !important;
+      color: #fff !important; font-weight: 900 !important; font-size: 14px !important;
     }
+    /* 위치 이름 툴팁 */
+    .loc-tooltip {
+      background: rgba(15,10,40,0.88) !important;
+      border: 1.5px solid rgba(124,58,237,0.5) !important;
+      border-radius: 8px !important;
+      color: #fff !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      padding: 4px 9px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+      white-space: nowrap !important;
+    }
+    .loc-tooltip::before { display: none !important; }
   </style>
   <style>
     html, body { height: 100%; overflow: hidden; }
@@ -431,16 +444,24 @@
     let _bonusMilestones = [];
 
     // ── 마커 아이콘 ──────────────────────────────
-    function makeIcon(emoji, size = 36) {
+    function makeIcon(emoji, size = 52) {
+      const fs = Math.round(size * 0.52);
       return L.divIcon({
         html: `<div style="
-          font-size:${size}px; line-height:1;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          width:${size}px; height:${size}px;
+          background: linear-gradient(135deg,#7c3aed,#a855f7);
+          border: 3px solid #fff;
+          border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size:${fs}px; line-height:1;
+          box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+          cursor: pointer;
+          pointer-events: all;
           ">${emoji}</div>`,
-        className: '',
-        iconSize: [size, size],
+        className: 'leaflet-interactive',
+        iconSize:   [size, size],
         iconAnchor: [size/2, size/2],
-        popupAnchor: [0, -size/2],
+        popupAnchor:[0, -(size/2 + 6)],
       });
     }
 
@@ -457,10 +478,12 @@
       // ── 마커 클러스터 그룹 ─────────────────────
       // 장소가 겹쳐도 거미줄처럼 펼쳐져서 모두 탭 가능
       clusterGroup = L.markerClusterGroup({
-        showCoverageOnHover: false,   // 클릭 범위 폴리곤 숨김
-        spiderfyOnMaxZoom: true,      // 최대 줌에서도 spiderify
-        disableClusteringAtZoom: 19,  // 줌 19 이상이면 클러스터 해제
-        maxClusterRadius: 50,         // 50px 이내 마커 묶기
+        showCoverageOnHover: false,      // 클릭 범위 폴리곤 숨김
+        spiderfyOnMaxZoom: true,         // 정확히 같은 위치 마커 spiderify
+        disableClusteringAtZoom: 17,     // 줌 17 이상이면 개별 마커 표시
+        maxClusterRadius: 40,            // 40px 이내만 묶기 (너무 넓으면 불편)
+        zoomToBoundsOnClick: true,       // 클러스터 탭 시 확대해서 마커 분리
+        spiderfyDistanceMultiplier: 1.8, // spiderify 시 간격 넓게
         spiderLegPolylineOptions: { weight: 2, color: '#7c3aed', opacity: 0.7 },
         iconCreateFunction: function(cluster) {
           const count = cluster.getChildCount();
@@ -616,9 +639,23 @@
       const isDone = (participant.completedLocations || []).includes(loc.id);
       if (isDone) return; // 완료된 장소는 마커 추가 안 함
 
-      const marker = L.marker([loc.lat, loc.lng], { icon: makeIcon('📍') });
+      const isDoneIcon = isDone ? '✅' : '📍';
+      const marker = L.marker([loc.lat, loc.lng], {
+        icon: makeIcon(isDoneIcon),
+        title: loc.name,          // 데스크톱 hover 툴팁
+        alt:   loc.name,
+        riseOnHover: true,        // hover 시 다른 마커 위로 올라옴
+        interactive: true,
+      });
+      // 위치 이름 상시 툴팁
+      marker.bindTooltip(loc.name, {
+        permanent: false,
+        direction: 'top',
+        className: 'loc-tooltip',
+        offset: [0, -30],
+      });
       marker.on('click', () => showLocationPopup(loc));
-      clusterGroup.addLayer(marker); // map 대신 clusterGroup에 추가
+      clusterGroup.addLayer(marker);
       locationMarkers[loc.id] = marker;
     }
 
