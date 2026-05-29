@@ -29,6 +29,27 @@
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       backdrop-filter: blur(4px);
     }
+    /* ── 30초 타이머 ── */
+    #quiz-timer-wrap {
+      display: none; justify-content: center; align-items: center;
+      margin: 4px 16px 8px; position: relative; height: 64px;
+    }
+    .timer-svg { width: 64px; height: 64px; transform: rotate(-90deg); }
+    .timer-bg { fill: none; stroke: #e2e8f0; stroke-width: 3; }
+    .timer-ring {
+      fill: none; stroke: #7c3aed; stroke-width: 3;
+      stroke-dasharray: 100 0; stroke-dashoffset: 25;
+      stroke-linecap: round;
+      transition: stroke-dasharray 1s linear, stroke 0.4s;
+    }
+    #timer-count {
+      position: absolute; font-size: 22px; font-weight: 900; color: #1e293b;
+      transition: color 0.4s;
+    }
+    .result-explanation {
+      display: block; margin-top: 8px; font-size: 13px;
+      font-weight: 600; opacity: 0.92; line-height: 1.5;
+    }
     @keyframes popupIn {
       from { transform: translate(-50%,-50%) scale(0.85); opacity: 0; }
       to   { transform: translate(-50%,-50%) scale(1);    opacity: 1; }
@@ -106,6 +127,14 @@
     <!-- 퀴즈 본문 -->
     <div id="quiz-body" style="display:none; overflow-y:auto; flex:1;">
       <div class="question-box" id="question-text"></div>
+      <!-- 30초 타이머 -->
+      <div id="quiz-timer-wrap" style="display:none;">
+        <svg class="timer-svg" viewBox="0 0 36 36">
+          <circle class="timer-bg" cx="18" cy="18" r="15.9"/>
+          <circle class="timer-ring" cx="18" cy="18" r="15.9" id="timer-ring"/>
+        </svg>
+        <span id="timer-count">30</span>
+      </div>
       <div class="options" id="options-container"></div>
       <div class="result-box" id="result-box"></div>
       <div style="padding: 0 16px 32px;">
@@ -302,6 +331,7 @@
         btn.onclick = () => answer(i, question.correctIndex, loc.quiz?.points || 0, loc.id);
         container.appendChild(btn);
       });
+      startQuizTimer(() => handleTimeUp(loc.quiz?.points || 0, loc.id));
     }
 
     function showQuiz(loc) {
@@ -325,30 +355,33 @@
         btn.onclick = () => answer(i, quiz.correctIndex, quiz.points, loc.id);
         container.appendChild(btn);
       });
+      startQuizTimer(() => handleTimeUp(quiz.points, loc.id));
     }
 
     async function answer(selected, correct, points, locId) {
       if (answered) return;
+      stopQuizTimer();
 
       const btns = document.querySelectorAll('.option-btn');
       const resultBox = document.getElementById('result-box');
-      const backBtn = document.getElementById('back-btn');
 
       // 즉시 전체 버튼 잠금 → 빠른 연타로 인한 중복 처리 방지
       btns.forEach(b => b.disabled = true);
+      const explanation = currentQuestion?.explanation || '';
 
       if (selected === correct) {
         answered = true;
         btns[selected].classList.add('correct');
         const earnedPoints = attempts > 0 ? Math.floor(points / 2) : points;
-        resultBox.textContent = attempts > 0
+        resultBox.innerHTML = (attempts > 0
           ? `🎉 정답! +${earnedPoints}점 획득! (2번째 도전 — 절반 점수)`
-          : `🎉 정답! +${earnedPoints}점 획득!`;
+          : `🎉 정답! +${earnedPoints}점 획득!`)
+          + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
         resultBox.className = 'result-box show result-correct';
 
         const updates = {
           points:       firebase.firestore.FieldValue.increment(earnedPoints),
-          earnedPoints: firebase.firestore.FieldValue.increment(earnedPoints), // 직접 번 포인트 별도 추적
+          earnedPoints: firebase.firestore.FieldValue.increment(earnedPoints),
           completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
         };
         await db.collection('participants').doc(nickname).update(updates);
@@ -365,13 +398,15 @@
           btns.forEach((b, i) => { if (i !== selected) b.disabled = false; });
           resultBox.innerHTML = `😅 틀렸어요! 한 번 더 기회가 있어요.`;
           resultBox.className = 'result-box show result-wrong';
+          startQuizTimer(() => handleTimeUp(points, locId)); // 남은 시간으로 2번째 도전
         } else {
           // 2번 틀림 → 종료
           answered = true;
           btns.forEach(b => b.disabled = true);
           btns[correct].classList.add('correct');
           const correctText = currentQuestion?.options?.[correct] || '';
-          resultBox.innerHTML = `😢 아쉬워요! 정답: <b>${correctText}</b>`;
+          resultBox.innerHTML = `😢 아쉬워요! 정답: <b>${escHtml(correctText)}</b>`
+            + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
           resultBox.className = 'result-box show result-wrong';
 
           await db.collection('participants').doc(nickname).update({
@@ -407,7 +442,7 @@
     }
 
     // 수동으로 지도로 돌아가기 버튼 클릭 시 타이머 취소
-    document.getElementById('back-btn').addEventListener('click', () => clearInterval(_redirectTimer));
+    document.getElementById('back-btn').addEventListener('click', () => { clearInterval(_redirectTimer); stopQuizTimer(); });
 
     // quiz_assignments 쓰기는 통계용이라 실패해도 무시 (재시도 1회)
     function safeIncrementAssignment(locId, questionId) {
@@ -423,6 +458,71 @@
           ).catch(() => {});
         }, 3000);
       });
+    }
+
+    // ── 타이머 ────────────────────────────────
+    const QUIZ_TIME = 30;
+    let _timerInterval = null;
+    let _timerOnTimeUp = null;
+
+    function startQuizTimer(onTimeUp) {
+      _timerOnTimeUp = onTimeUp;
+      let sec = QUIZ_TIME;
+      const wrap = document.getElementById('quiz-timer-wrap');
+      wrap.style.display = 'flex';
+      _updateTimerUI(sec);
+      clearInterval(_timerInterval);
+      _timerInterval = setInterval(() => {
+        sec--;
+        _updateTimerUI(sec);
+        if (sec <= 0) { clearInterval(_timerInterval); if (_timerOnTimeUp) _timerOnTimeUp(); }
+      }, 1000);
+    }
+
+    function stopQuizTimer() {
+      clearInterval(_timerInterval);
+      _timerOnTimeUp = null;
+      const wrap = document.getElementById('quiz-timer-wrap');
+      if (wrap) wrap.style.display = 'none';
+    }
+
+    function _updateTimerUI(sec) {
+      const pct = Math.max(0, (sec / QUIZ_TIME) * 100);
+      const ring = document.getElementById('timer-ring');
+      const cnt  = document.getElementById('timer-count');
+      if (!ring || !cnt) return;
+      ring.setAttribute('stroke-dasharray', `${pct} ${100 - pct}`);
+      const color = sec <= 5 ? '#ef4444' : sec <= 10 ? '#f59e0b' : '#7c3aed';
+      ring.setAttribute('stroke', color);
+      cnt.textContent = sec;
+      cnt.style.color = sec <= 5 ? '#ef4444' : sec <= 10 ? '#f59e0b' : '#1e293b';
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function handleTimeUp(points, locId) {
+      if (answered) return;
+      answered = true;
+      stopQuizTimer();
+      const btns = document.querySelectorAll('.option-btn');
+      btns.forEach(b => b.disabled = true);
+      const correct = currentQuestion?.correctIndex;
+      if (correct !== undefined) btns[correct]?.classList.add('correct');
+      const correctText = currentQuestion?.options?.[correct] || '';
+      const explanation = currentQuestion?.explanation || '';
+      const resultBox = document.getElementById('result-box');
+      resultBox.innerHTML = `⏰ 시간 초과! 정답: <b>${escHtml(correctText)}</b>`
+        + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
+      resultBox.className = 'result-box show result-wrong';
+      try {
+        await db.collection('participants').doc(nickname).update({
+          completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
+        });
+        safeIncrementAssignment(locId, currentQuestion?.id);
+      } catch(e) { console.error(e); }
+      autoRedirect();
     }
 
     init();

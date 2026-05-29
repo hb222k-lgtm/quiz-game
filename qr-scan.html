@@ -51,6 +51,26 @@
       margin-bottom: 16px; color: var(--text);
     }
     .qr-result { white-space: pre-line; }
+    /* ── 30초 타이머 ── */
+    #qr-timer-wrap {
+      display: none; justify-content: center; align-items: center;
+      margin: 8px 0; position: relative; height: 64px;
+    }
+    .timer-svg { width: 64px; height: 64px; transform: rotate(-90deg); }
+    .timer-bg { fill: none; stroke: #e2e8f0; stroke-width: 3; }
+    .timer-ring {
+      fill: none; stroke: #7c3aed; stroke-width: 3;
+      stroke-dasharray: 100 0; stroke-dashoffset: 25;
+      stroke-linecap: round;
+      transition: stroke-dasharray 1s linear, stroke 0.4s;
+    }
+    #qr-timer-count {
+      position: absolute; font-size: 22px; font-weight: 900; color: #1e293b;
+      transition: color 0.4s;
+    }
+    .result-explanation {
+      display: block; margin-top: 6px; font-size: 13px; font-weight: 600; opacity: 0.92;
+    }
   </style>
 </head>
 <body>
@@ -74,6 +94,13 @@
       <div class="card">
         <div class="quiz-label">❓ 퀴즈 도전</div>
         <p id="qr-quiz-question"></p>
+        <div id="qr-timer-wrap" style="display:none;">
+          <svg class="timer-svg" viewBox="0 0 36 36">
+            <circle class="timer-bg" cx="18" cy="18" r="15.9"/>
+            <circle class="timer-ring" cx="18" cy="18" r="15.9" id="qr-timer-ring"/>
+          </svg>
+          <span id="qr-timer-count">30</span>
+        </div>
         <div id="qr-quiz-options"></div>
       </div>
     </div>
@@ -295,6 +322,72 @@
       }
     }
 
+    // ── QR 타이머 ──────────────────────────
+    const QR_TIME = 30;
+    let _qrTimerInterval = null;
+
+    function startQRTimer(onTimeUp) {
+      let sec = QR_TIME;
+      const wrap = document.getElementById('qr-timer-wrap');
+      wrap.style.display = 'flex';
+      _updateQRTimerUI(sec);
+      clearInterval(_qrTimerInterval);
+      _qrTimerInterval = setInterval(() => {
+        sec--;
+        _updateQRTimerUI(sec);
+        if (sec <= 0) { clearInterval(_qrTimerInterval); onTimeUp(); }
+      }, 1000);
+    }
+
+    function stopQRTimer() {
+      clearInterval(_qrTimerInterval);
+      const wrap = document.getElementById('qr-timer-wrap');
+      if (wrap) wrap.style.display = 'none';
+    }
+
+    function _updateQRTimerUI(sec) {
+      const pct = Math.max(0, (sec / QR_TIME) * 100);
+      const ring = document.getElementById('qr-timer-ring');
+      const cnt  = document.getElementById('qr-timer-count');
+      if (!ring || !cnt) return;
+      ring.setAttribute('stroke-dasharray', `${pct} ${100 - pct}`);
+      const color = sec <= 5 ? '#ef4444' : sec <= 10 ? '#f59e0b' : '#7c3aed';
+      ring.setAttribute('stroke', color);
+      cnt.textContent = sec;
+      cnt.style.color = sec <= 5 ? '#ef4444' : sec <= 10 ? '#f59e0b' : '#1e293b';
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function handleQRTimeUp() {
+      if (quizAnswered) return;
+      quizAnswered = true;
+      stopQRTimer();
+      const quiz = currentQRCode?._quiz || currentQRCode?.quiz;
+      if (!quiz) return;
+      const btns = document.querySelectorAll('#qr-quiz-options button');
+      btns.forEach(b => b.disabled = true);
+      btns[quiz.correctIndex]?.classList.add('correct');
+      const correctText = quiz.options?.[quiz.correctIndex] || '';
+      const explanation = quiz.explanation || '';
+      try {
+        const qRef = db.collection('qrcodes').doc(currentQRCode.id);
+        await db.runTransaction(async tx => {
+          const qSnap = await tx.get(qRef);
+          if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
+          tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
+        });
+      } catch(e) { if (e.message !== 'ALREADY_USED') console.error(e); }
+      const resultEl = document.getElementById('qr-result');
+      resultEl.style.display = 'block';
+      resultEl.className = 'qr-result show error';
+      resultEl.innerHTML = `⏰ 시간 초과! 정답: <b>${escHtml(correctText)}</b>`
+        + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
+      document.getElementById('scan-again-wrap').style.display = 'block';
+    }
+
     function showQRQuiz(qrData) {
       quizAnswered = false;
       const quiz = qrData._quiz || qrData.quiz;
@@ -311,70 +404,65 @@
       });
 
       document.getElementById('qr-quiz-wrap').style.display = 'block';
+      startQRTimer(handleQRTimeUp);
     }
 
     async function answerQRQuiz(selected, qrData) {
       if (quizAnswered) return;
+      stopQRTimer();
 
       const quiz = qrData._quiz || qrData.quiz;
       const btns = document.querySelectorAll('#qr-quiz-options button');
       const isCorrect = selected === quiz.correctIndex;
+      const explanation = quiz.explanation || '';
 
       if (isCorrect) {
-        // 정답
         quizAnswered = true;
         btns.forEach(b => b.disabled = true);
         btns[selected].classList.add('correct');
 
         try {
           const pts = parseInt(quiz.points) || 0;
-          // transaction으로 포인트·usedBy 동시 기록 + 중복 방지 재확인
           await db.runTransaction(async tx => {
             const qRef = db.collection('qrcodes').doc(qrData.id);
             const qSnap = await tx.get(qRef);
-            if ((qSnap.data()?.usedBy || []).includes(nickname)) {
-              throw new Error('ALREADY_USED');
-            }
+            if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             tx.update(db.collection('participants').doc(nickname), {
               points:       firebase.firestore.FieldValue.increment(pts),
               earnedPoints: firebase.firestore.FieldValue.increment(pts),
               scannedQRs:   firebase.firestore.FieldValue.arrayUnion(qrData.id)
             });
-            tx.update(qRef, {
-              usedBy: firebase.firestore.FieldValue.arrayUnion(nickname)
-            });
+            tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
-          // QR 퀴즈 문제 배분 통계 업데이트 (다음 참가자에게 다른 문제 배정)
           if (currentQRCode?.id && quiz.id) {
             db.collection('qr_quiz_assignments').doc(currentQRCode.id).set(
-              { [quiz.id]: firebase.firestore.FieldValue.increment(1) },
-              { merge: true }
+              { [quiz.id]: firebase.firestore.FieldValue.increment(1) }, { merge: true }
             ).catch(() => {});
           }
-          showResult(true, `🎉 정답! +${pts}점 획득!`);
+          const resultEl = document.getElementById('qr-result');
+          resultEl.style.display = 'block';
+          resultEl.className = 'qr-result show success';
+          resultEl.innerHTML = `🎉 정답! +${pts}점 획득!`
+            + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
+          document.getElementById('scan-again-wrap').style.display = 'block';
         } catch (e) {
-          console.error('QR quiz answer error:', e);
-          if (e.message === 'ALREADY_USED') {
-            showResult(false, '이미 처리된 QR 코드예요. (다른 기기에서 처리됨)');
-          } else {
-            showResult(false, '오류가 발생했어요: ' + e.message);
-          }
+          if (e.message === 'ALREADY_USED') showResult(false, '이미 처리된 QR 코드예요.');
+          else showResult(false, '오류가 발생했어요: ' + e.message);
         }
 
       } else {
-        // 오답
         qrAttempts++;
         btns[selected].classList.add('wrong');
         btns[selected].disabled = true;
 
         if (qrAttempts < 2) {
-          // 1번 틀림 → 한 번 더 기회
           const resultEl = document.getElementById('qr-result');
           resultEl.style.display = 'block';
           resultEl.className = 'qr-result show warning';
           resultEl.textContent = '😅 틀렸어요! 한 번 더 기회가 있어요.';
+          startQRTimer(handleQRTimeUp); // 타이머 재시작 (2번째 도전)
+          btns.forEach((b, i) => { if (i !== selected) b.disabled = false; });
         } else {
-          // 2번 틀림 → 종료 (트랜잭션으로 usedBy 중복 방지)
           quizAnswered = true;
           btns.forEach(b => b.disabled = true);
           btns[quiz.correctIndex].classList.add('correct');
@@ -387,14 +475,14 @@
               tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             });
           } catch (e) {
-            if (e.message === 'ALREADY_USED') {
-              console.log('이미 처리된 QR (오답 종료)');
-            } else {
-              console.error('QR usedBy update error:', e);
-            }
+            if (e.message !== 'ALREADY_USED') console.error('QR usedBy update error:', e);
           }
           const correctText = quiz.options?.[quiz.correctIndex] || '';
-          showResult(false, `😢 아쉬워요! 정답: ${correctText}`);
+          const resultEl = document.getElementById('qr-result');
+          resultEl.style.display = 'block';
+          resultEl.className = 'qr-result show error';
+          resultEl.innerHTML = `😢 아쉬워요! 정답: <b>${escHtml(correctText)}</b>`
+            + (explanation ? `<span class="result-explanation">${escHtml(explanation)}</span>` : '');
           document.getElementById('scan-again-wrap').style.display = 'block';
         }
       }
@@ -409,6 +497,7 @@
     }
 
     function resetScanner() {
+      stopQRTimer();
       const resultEl = document.getElementById('qr-result');
       resultEl.className = 'qr-result';
       resultEl.style.display = 'none';
