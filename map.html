@@ -910,6 +910,15 @@
         document.getElementById('header-name').textContent = nickname;
         document.getElementById('header-progress').textContent =
           `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
+        // 팀 배지 헤더 갱신 (loadTeamConfig 이후에도 팀 정보가 업데이트될 수 있으므로)
+        if (_teamConfig?.enabled && participant?.team) {
+          const myTeam = (_teamConfig.teams || []).find(t => t.id === participant.team);
+          if (myTeam) {
+            const hdrTeam = document.getElementById('header-team-badge');
+            hdrTeam.textContent = `${myTeam.emoji || ''}${myTeam.name || myTeam.id}`;
+            hdrTeam.style.cssText = `display:inline-block;background:${myTeam.color||'#7c3aed'};color:#fff;border-radius:8px;padding:2px 8px;font-size:12px;margin-right:6px;`;
+          }
+        }
         // 보너스 구간 확인
         checkBonusMilestones(participant.points || 0, participant.claimedMilestones);
         // 마커 갱신

@@ -259,6 +259,8 @@
             return { deducted: cur - newPts };
           });
           showResult(false, `😱 ${qrData.label || 'QR'} 스캔! -${res.deducted}점... 다음엔 잘 골라요!`);
+          showHintBox(qrData.hint);
+          checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'double') {
           // 🎰 점수 2배
@@ -274,6 +276,8 @@
             return { before: cur, after: cur * 2 };
           });
           showResult(true, `🎰 대박! 점수 2배! ${res.before}점 → ${res.after}점!`);
+          showHintBox(qrData.hint);
+          checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'half') {
           // ✂️ 점수 절반
@@ -290,6 +294,8 @@
             return { before: cur, after: newPts };
           });
           showResult(false, `✂️ 아이쿠! 점수 절반... ${res.before}점 → ${res.after}점`, 'warning');
+          showHintBox(qrData.hint);
+          checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'nothing') {
           // 💨 꽝!
@@ -302,6 +308,8 @@
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
           });
           showResult(false, `💨 꽝! 아무 일도 일어나지 않았어요 😅`, 'warning');
+          showHintBox(qrData.hint);
+          checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'team_mission') {
           // 🤝 팀 미션 QR — 같은 팀 N명 스캔 시 팀 전원 보너스
@@ -454,7 +462,11 @@
           const qSnap = await tx.get(qRef);
           if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
           tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
+          tx.update(db.collection('participants').doc(nickname), {
+            scannedQRs: firebase.firestore.FieldValue.arrayUnion(currentQRCode.id)
+          });
         });
+        checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
       } catch(e) { if (e.message !== 'ALREADY_USED') console.error(e); }
       const resultEl = document.getElementById('qr-result');
       resultEl.style.display = 'block';
@@ -556,7 +568,11 @@
               const qSnap = await tx.get(qRef);
               if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
               tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
+              tx.update(db.collection('participants').doc(nickname), {
+                scannedQRs: firebase.firestore.FieldValue.arrayUnion(qrData.id)
+              });
             });
+            checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
           } catch (e) {
             if (e.message !== 'ALREADY_USED') console.error('QR usedBy update error:', e);
           }

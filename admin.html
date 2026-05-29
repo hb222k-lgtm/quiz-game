@@ -1272,7 +1272,7 @@ async function startGoldenTime() {
 }
 
 async function stopGoldenTime() {
-  await db.collection('config').doc('goldenTime').set({ active: false });
+  await db.collection('config').doc('goldenTime').set({ active: false }, { merge: true });
   showToast('골든타임 종료됐어요');
 }
 
