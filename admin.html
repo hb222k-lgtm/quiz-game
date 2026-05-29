@@ -169,6 +169,35 @@
         </div>
       </div>
 
+      <!-- 팀 합계 달성 보너스 -->
+      <div class="card mt-16">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="font-weight:700;">🎯 팀 합계 달성 보너스</h3>
+          <button class="btn btn-primary btn-sm" onclick="openTeamMilestoneModal()">+ 추가</button>
+        </div>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">팀 포인트 합계가 목표치에 도달하면 팀 전원에게 자동으로 보너스를 지급해요.</p>
+        <div id="milestone-list-admin">
+          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">마일스톤이 없어요</p>
+        </div>
+      </div>
+
+      <!-- 팀 전체 포인트 일괄 지급 -->
+      <div class="card mt-16" style="margin-bottom:40px;">
+        <h3 style="font-weight:700; margin-bottom:4px;">💰 팀 전체 포인트 일괄 지급</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">선택한 팀의 모든 구성원에게 포인트를 한 번에 지급해요.</p>
+        <div class="form-group">
+          <label>팀 선택</label>
+          <select id="bulk-team-select" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; background:#fff; font-weight:600; outline:none;">
+            <option value="">팀을 선택하세요</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>지급 포인트</label>
+          <input type="number" id="bulk-team-points" value="100" min="1">
+        </div>
+        <button class="btn btn-primary" onclick="bulkAwardTeamPoints()">팀 전체에 지급</button>
+      </div>
+
     </div>
 
     <!-- ── 리더보드 탭 ── -->
@@ -721,6 +750,10 @@
           <input type="radio" name="qr-type" value="quiz" onchange="toggleQRType('quiz')" style="display:none">
           ❓<span>퀴즈 출제</span>
         </label>
+        <label class="qr-type-btn" id="qropt-team_mission">
+          <input type="radio" name="qr-type" value="team_mission" onchange="toggleQRType('team_mission')" style="display:none">
+          🤝<span>팀 미션</span>
+        </label>
       </div>
     </div>
 
@@ -744,6 +777,21 @@
       <div class="form-group">
         <label>정답 포인트</label>
         <input type="number" id="qr-quiz-points" value="100" min="1">
+      </div>
+    </div>
+
+    <!-- 팀 미션 섹션 -->
+    <div id="qr-team-mission-section" style="display:none;">
+      <div style="background:#f0f9ff; border:1.5px solid #0ea5e930; border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; color:#0369a1; line-height:1.6;">
+        🤝 설정한 인원 수만큼 같은 팀원이 이 QR을 스캔하면 팀 전원에게 보너스 포인트를 지급해요.
+      </div>
+      <div class="form-group">
+        <label>팀원 스캔 필요 인원</label>
+        <input type="number" id="qr-team-required" value="3" min="1">
+      </div>
+      <div class="form-group">
+        <label>팀 보너스 포인트 (팀 전원 지급)</label>
+        <input type="number" id="qr-team-bonus" value="200" min="1">
       </div>
     </div>
 
@@ -856,6 +904,15 @@ async function loadTeamModeAdmin() {
     renderTeamModeToggle();
     renderTeamListAdmin();
     loadTeamStandings();
+    loadTeamMilestonesAdmin();
+    // 팀 선택 드롭다운 갱신
+    const sel = document.getElementById('bulk-team-select');
+    if (sel) {
+      sel.innerHTML = '<option value="">팀을 선택하세요</option>' +
+        _teamModeData.teams.map(t =>
+          `<option value="${escHtml(t.id)}">${t.emoji||''} ${escHtml(t.name)}</option>`
+        ).join('');
+    }
   } catch(e) { console.error(e); }
 }
 
@@ -1066,6 +1123,85 @@ async function assignTeam(nickname, teamId) {
     });
     showToast(`✅ ${nickname} → ${teamId || '팀 없음'}`);
   } catch(e) { showToast('팀 변경 실패'); }
+}
+
+// ── 팀 마일스톤 (팀 합계 달성 보너스) ─────────────────
+let _teamMilestones = [];
+
+async function loadTeamMilestonesAdmin() {
+  try {
+    const snap = await db.collection('config').doc('teamMilestones').get();
+    _teamMilestones = snap.data()?.milestones || [];
+    renderTeamMilestonesAdmin();
+  } catch(e) {}
+}
+
+function renderTeamMilestonesAdmin() {
+  const el = document.getElementById('milestone-list-admin');
+  if (!el) return;
+  if (!_teamMilestones.length) {
+    el.innerHTML = '<p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">마일스톤이 없어요</p>';
+    return;
+  }
+  el.innerHTML = _teamMilestones.map((m, i) => `
+    <div style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+      <div style="flex:1;">
+        <span style="font-weight:700; color:#0369a1;">🎯 ${m.threshold.toLocaleString()}점 달성</span>
+        <span style="margin-left:8px; font-size:13px; color:#64748b;">→ 팀원 1인당 +${m.bonus.toLocaleString()}점</span>
+      </div>
+      <button onclick="deleteTeamMilestone(${i})" style="padding:4px 10px; background:#fef2f2; border:1.5px solid #fca5a5; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; color:#ef4444;">삭제</button>
+    </div>
+  `).join('');
+}
+
+async function openTeamMilestoneModal() {
+  const threshold = prompt('팀 포인트 합계 목표치 (점):', '1000');
+  if (threshold === null) return;
+  const bonus = prompt('달성 시 팀원 1인당 보너스 (점):', '50');
+  if (bonus === null) return;
+  const t = parseInt(threshold), b = parseInt(bonus);
+  if (isNaN(t) || isNaN(b) || t <= 0 || b <= 0) { showToast('올바른 숫자를 입력해주세요'); return; }
+  _teamMilestones.push({ threshold: t, bonus: b, key: 'ms_' + t + '_' + Date.now() });
+  _teamMilestones.sort((a, b) => a.threshold - b.threshold);
+  await saveTeamMilestones();
+}
+
+async function deleteTeamMilestone(idx) {
+  if (!confirm('이 마일스톤을 삭제할까요?')) return;
+  _teamMilestones.splice(idx, 1);
+  await saveTeamMilestones();
+}
+
+async function saveTeamMilestones() {
+  await db.collection('config').doc('teamMilestones').set({ milestones: _teamMilestones }, { merge: true });
+  renderTeamMilestonesAdmin();
+  showToast('마일스톤이 저장됐어요');
+}
+
+// ── 팀 전체 포인트 일괄 지급 ─────────────────────────
+async function bulkAwardTeamPoints() {
+  const teamId = document.getElementById('bulk-team-select').value;
+  const pts    = parseInt(document.getElementById('bulk-team-points').value) || 0;
+  if (!teamId) { showToast('팀을 선택해주세요'); return; }
+  if (pts <= 0) { showToast('포인트를 올바르게 입력해주세요'); return; }
+  const teamName = (_teamModeData.teams || []).find(t => t.id === teamId)?.name || teamId;
+  if (!confirm(`"${teamName}" 팀 전원에게 ${pts}점을 지급할까요?`)) return;
+
+  const snap = await db.collection('participants').where('team', '==', teamId).get();
+  if (snap.empty) { showToast('해당 팀에 참가자가 없어요'); return; }
+
+  const chunkSize = 500;
+  for (let i = 0; i < snap.docs.length; i += chunkSize) {
+    const batch = db.batch();
+    snap.docs.slice(i, i + chunkSize).forEach(d => {
+      batch.update(d.ref, {
+        points:       firebase.firestore.FieldValue.increment(pts),
+        earnedPoints: firebase.firestore.FieldValue.increment(pts),
+      });
+    });
+    await batch.commit();
+  }
+  showToast(`✅ "${teamName}" 팀 ${snap.size}명에게 ${pts}점 지급됐어요!`);
 }
 
 function escHtml(s) {
@@ -1782,7 +1918,8 @@ const QR_TYPE_INFO = {
   double:  { label: '🎰 점수 2배',     color: '#7c3aed', bg: '#ede9fe' },
   half:    { label: '✂️ 점수 절반',    color: '#ea580c', bg: '#fff7ed' },
   nothing: { label: '💨 꽝',           color: '#64748b', bg: '#f1f5f9' },
-  quiz:    { label: '❓ 퀴즈',         color: '#6d28d9', bg: '#ede9fe' },
+  quiz:         { label: '❓ 퀴즈',    color: '#6d28d9', bg: '#ede9fe' },
+  team_mission: { label: '🤝 팀 미션', color: '#0369a1', bg: '#e0f2fe' },
 };
 
 const QR_EFFECT_DESC = {
@@ -1793,7 +1930,7 @@ const QR_EFFECT_DESC = {
 
 function toggleQRType(type) {
   // 버튼 스타일 갱신
-  ['points','minus','double','half','nothing','quiz'].forEach(t => {
+  ['points','minus','double','half','nothing','quiz','team_mission'].forEach(t => {
     document.getElementById('qropt-' + t)?.classList.toggle('active', t === type);
   });
   // 섹션 표시
@@ -1802,6 +1939,7 @@ function toggleQRType(type) {
   document.getElementById('qr-amount-label').textContent =
     type === 'minus' ? '차감 포인트' : '지급 포인트';
   document.getElementById('qr-quiz-section').style.display = type === 'quiz' ? 'block' : 'none';
+  document.getElementById('qr-team-mission-section').style.display = type === 'team_mission' ? 'block' : 'none';
   const effectInfo = QR_EFFECT_DESC[type];
   const effectEl = document.getElementById('qr-effect-section');
   if (effectInfo) {
@@ -1821,6 +1959,8 @@ function openQRModal() {
   document.getElementById('qr-label').value = '';
   document.getElementById('qr-points').value = '50';
   document.getElementById('qr-quiz-points').value = '100';
+  document.getElementById('qr-team-required').value = '3';
+  document.getElementById('qr-team-bonus').value = '200';
   document.getElementById('qr-start-at').value = '';
   document.getElementById('qr-end-at').value = '';
   document.querySelector('input[name="qr-type"][value="points"]').checked = true;
@@ -1841,6 +1981,10 @@ async function generateQR() {
   } else if (type === 'points' || type === 'minus') {
     const points = parseInt(document.getElementById('qr-points').value) || 50;
     data = { label, type, points, enabled: true, usedBy: [] };
+  } else if (type === 'team_mission') {
+    const requiredMembers = parseInt(document.getElementById('qr-team-required').value) || 3;
+    const teamBonusPoints = parseInt(document.getElementById('qr-team-bonus').value) || 200;
+    data = { label, type: 'team_mission', requiredMembers, teamBonusPoints, enabled: true, usedBy: [], teamProgress: {} };
   } else {
     // double / half / nothing — 포인트 필드 없음
     data = { label, type, enabled: true, usedBy: [] };
@@ -1883,6 +2027,9 @@ function showQRImage(id) {
     document.getElementById('qr-quiz-points').value = qr.quizPoints || 100;
   } else if (qr.type === 'points' || qr.type === 'minus') {
     document.getElementById('qr-points').value = qr.points || 50;
+  } else if (qr.type === 'team_mission') {
+    document.getElementById('qr-team-required').value = qr.requiredMembers || 3;
+    document.getElementById('qr-team-bonus').value = qr.teamBonusPoints || 200;
   }
   document.getElementById('qr-start-at').value = qr.startAt || '';
   document.getElementById('qr-end-at').value   = qr.endAt   || '';

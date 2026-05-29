@@ -1539,6 +1539,77 @@
       });
     }
 
+    // ── 팀 마일스톤 체크 ──────────────────────────────
+    let _checkingMilestones = false;
+    let _cachedMilestones   = null;
+    let _msCacheTime        = 0;
+
+    async function checkTeamMilestones(teamPts, teams, snap) {
+      if (_checkingMilestones) return;
+      _checkingMilestones = true;
+      try {
+        const now = Date.now();
+        if (!_cachedMilestones || now - _msCacheTime > 30000) {
+          const msSnap = await db.collection('config').doc('teamMilestones').get();
+          _cachedMilestones = msSnap.data() || null;
+          _msCacheTime = now;
+        }
+        const milestones = _cachedMilestones?.milestones || [];
+        if (!milestones.length) return;
+
+        for (const team of teams) {
+          const pts = teamPts[team.id] || 0;
+          const claimed = (_cachedMilestones?.claimed || {})[team.id] || [];
+
+          for (const ms of milestones) {
+            if (pts >= ms.threshold && !claimed.includes(ms.key)) {
+              // 트랜잭션으로 단 한 번만 claim
+              let didClaim = false;
+              try {
+                await db.runTransaction(async tx => {
+                  const ref = db.collection('config').doc('teamMilestones');
+                  const s   = await tx.get(ref);
+                  const cur = ((s.data()?.claimed || {})[team.id] || []);
+                  if (cur.includes(ms.key)) { didClaim = false; return; }
+                  tx.update(ref, { [`claimed.${team.id}`]: firebase.firestore.FieldValue.arrayUnion(ms.key) });
+                  didClaim = true;
+                });
+              } catch(e) { continue; }
+
+              if (!didClaim) continue;
+
+              // 캐시 업데이트
+              if (!_cachedMilestones.claimed) _cachedMilestones.claimed = {};
+              if (!_cachedMilestones.claimed[team.id]) _cachedMilestones.claimed[team.id] = [];
+              _cachedMilestones.claimed[team.id].push(ms.key);
+
+              // 팀원 전체 보너스 지급
+              const teamDocs = snap.docs.filter(d => d.data().team === team.id);
+              if (teamDocs.length) {
+                const batch = db.batch();
+                teamDocs.forEach(d => batch.update(d.ref, {
+                  points:       firebase.firestore.FieldValue.increment(ms.bonus),
+                  earnedPoints: firebase.firestore.FieldValue.increment(ms.bonus),
+                }));
+                await batch.commit();
+              }
+
+              // 내 팀이면 알림
+              if (team.id === participant?.team) {
+                showRankNotif(
+                  `🎯 마일스톤 달성!`,
+                  `${team.emoji||''}${team.name} ${ms.threshold.toLocaleString()}점 돌파! +${ms.bonus}점!`,
+                  'gold'
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        _checkingMilestones = false;
+      }
+    }
+
     function renderTeamsList(snap, teams) {
       // 팀별 포인트 합산
       const teamPts = {};
@@ -1555,6 +1626,9 @@
 
       // 정렬
       const sorted = [...teams].sort((a, b) => (teamPts[b.id]||0) - (teamPts[a.id]||0));
+
+      // 마일스톤 체크 (비동기, fire-and-forget)
+      checkTeamMilestones(teamPts, teams, snap);
 
       // 내 팀 순위 변동 감지
       const myTeamId = participant?.team;

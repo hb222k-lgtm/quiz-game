@@ -297,6 +297,57 @@
           });
           showResult(false, `💨 꽝! 아무 일도 일어나지 않았어요 😅`, 'warning');
 
+        } else if (qrData.type === 'team_mission') {
+          // 🤝 팀 미션 QR — 같은 팀 N명 스캔 시 팀 전원 보너스
+          const pSnap = await db.collection('participants').doc(nickname).get();
+          const myTeam = pSnap.data()?.team;
+          if (!myTeam) {
+            showResult(false, '팀에 속하지 않으면 팀 미션을 스캔할 수 없어요.\n먼저 팀을 선택해주세요.');
+            return;
+          }
+          const required = qrData.requiredMembers || 3;
+          const bonus    = qrData.teamBonusPoints  || 200;
+
+          const res = await db.runTransaction(async tx => {
+            const qRef = db.collection('qrcodes').doc(code);
+            const pRef = db.collection('participants').doc(nickname);
+            const qSnap = await tx.get(qRef);
+            const qd = qSnap.data() || {};
+            if ((qd.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
+            const teamData = (qd.teamProgress || {})[myTeam] || { members: [], completed: false };
+            if (teamData.completed) throw new Error('TEAM_DONE');
+            if ((teamData.members || []).includes(nickname)) throw new Error('ALREADY_USED');
+            const newCount = (teamData.members || []).length + 1;
+            const isComplete = newCount >= required;
+            const updates = {
+              usedBy: firebase.firestore.FieldValue.arrayUnion(nickname),
+              [`teamProgress.${myTeam}.members`]: firebase.firestore.FieldValue.arrayUnion(nickname),
+            };
+            if (isComplete) updates[`teamProgress.${myTeam}.completed`] = true;
+            tx.update(qRef, updates);
+            tx.update(pRef, { scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
+            return { count: newCount, required, isComplete };
+          });
+
+          if (res.isComplete) {
+            // 팀 전원에게 보너스 지급
+            const teamSnap = await db.collection('participants').where('team', '==', myTeam).get();
+            const chunkSize = 500;
+            for (let ci = 0; ci < teamSnap.docs.length; ci += chunkSize) {
+              const batch = db.batch();
+              teamSnap.docs.slice(ci, ci + chunkSize).forEach(d => {
+                batch.update(d.ref, {
+                  points:       firebase.firestore.FieldValue.increment(bonus),
+                  earnedPoints: firebase.firestore.FieldValue.increment(bonus),
+                });
+              });
+              await batch.commit();
+            }
+            showResult(true, `🎉 팀 미션 완료! ${res.required}명 모두 스캔!\n팀 전원 +${bonus}점 지급됐어요!`);
+          } else {
+            showResult(true, `✅ 스캔 완료! 우리 팀 ${res.count}/${res.required}명\n${res.required - res.count}명 더 스캔하면 팀 전원 +${bonus}점!`);
+          }
+
         } else {
           // 💰 포인트 즉시 지급 — 트랜잭션 내에서 usedBy 재확인 (동시 스캔 중복 방지)
           await db.runTransaction(async tx => {
@@ -316,6 +367,8 @@
       } catch (e) {
         if (e.message === 'ALREADY_USED') {
           showResult(false, '이미 스캔한 QR 코드예요.');
+        } else if (e.message === 'TEAM_DONE') {
+          showResult(false, '우리 팀이 이미 이 미션을 완료했어요! 🎉');
         } else {
           showResult(false, '오류가 발생했어요. 다시 시도해주세요.');
         }
