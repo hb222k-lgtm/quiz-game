@@ -915,8 +915,10 @@
           const myTeam = (_teamConfig.teams || []).find(t => t.id === participant.team);
           if (myTeam) {
             const hdrTeam = document.getElementById('header-team-badge');
-            hdrTeam.textContent = `${myTeam.emoji || ''}${myTeam.name || myTeam.id}`;
-            hdrTeam.style.cssText = `display:inline-block;background:${myTeam.color||'#7c3aed'};color:#fff;border-radius:8px;padding:2px 8px;font-size:12px;margin-right:6px;`;
+            if (hdrTeam) {
+              hdrTeam.textContent = `${myTeam.emoji || ''}${myTeam.name || myTeam.id}`;
+              hdrTeam.style.cssText = `display:inline-block;background:${myTeam.color||'#7c3aed'};color:#fff;border-radius:8px;padding:2px 8px;font-size:12px;margin-right:6px;`;
+            }
           }
         }
         // 보너스 구간 확인
