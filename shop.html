@@ -92,7 +92,7 @@
     <div class="tab-content" id="tab-team" style="flex:1; overflow-y:auto; display:none;">
       <div style="padding:14px 16px 4px; display:flex; align-items:center; justify-content:space-between;">
         <div id="team-shop-label" style="font-size:14px; font-weight:800; color:#374151;"></div>
-        <button id="add-team-item-btn" onclick="openAddTeamItemModal()" style="display:none;
+        <button id="add-team-item-btn" style="display:none;
           background:#7c3aed; color:#fff; border:none; border-radius:10px;
           padding:8px 14px; font-size:13px; font-weight:700; cursor:pointer;">+ 상품 추가</button>
       </div>
@@ -228,7 +228,7 @@
         tab.style.display = 'none';
         costEl.style.display = 'none';
         addBtn.style.display = 'none';
-        myTeamData = null; isTeamLeader = false;
+        myTeamData = null;
         return;
       }
 
@@ -264,9 +264,9 @@
       if (!myTeamId) return;
       _teamItemsUnsubscribe = db.collection('team_shop_items')
         .where('teamId', '==', myTeamId)
-        .where('enabled', '==', true)
         .onSnapshot(snap => {
-          teamItemsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          teamItemsData = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(i => i.enabled !== false);
           renderTeamItems();
         }, e => console.warn('팀 상품 로드 오류:', e));
     }

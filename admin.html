@@ -1438,7 +1438,7 @@ function switchTab(id, btn) {
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
   if (id === 'settings') { loadGamePeriod(); loadTransferLimit(); loadTransferLog(); }
   if (id === 'teams') loadTeamModeAdmin();
-  if (id === 'shop')  updateTeamShopSelects();
+  if (id === 'shop')  { loadTeamModeAdmin().then(updateTeamShopSelects); }
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
