@@ -269,6 +269,20 @@
       <div class="divider"></div>
       <button class="btn btn-primary mb-8" onclick="openShopItemModal()">+ 상품 추가</button>
       <div id="shop-items-list"></div>
+
+      <!-- 팀 전용 상품 -->
+      <div class="divider" style="margin-top:24px;"></div>
+      <h3 style="font-weight:700; margin-bottom:4px;">🏷️ 팀 전용 상품 관리</h3>
+      <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">구매 시 팀원 전체에게 1/n 비용이 자동 차감돼요.</p>
+      <div class="form-group">
+        <label>팀 필터</label>
+        <select id="team-shop-filter" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; background:#fff; font-weight:600; outline:none;"
+          onchange="renderTeamShopItems()">
+          <option value="">전체 팀</option>
+        </select>
+      </div>
+      <button class="btn btn-primary mb-8" onclick="openTeamShopItemModal()">+ 팀 상품 추가</button>
+      <div id="team-shop-items-list"></div>
     </div>
 
     <!-- ── 공지 탭 ── -->
@@ -573,6 +587,47 @@
 
     <input type="hidden" id="item-edit-id">
     <button class="btn btn-primary" onclick="saveShopItem()">저장하기</button>
+  </div>
+</div>
+
+<!-- ── 팀 상품 추가/수정 모달 ── -->
+<div class="modal-overlay" id="team-shop-item-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('team-shop-item-modal')">✕</button>
+    <h3 id="team-shop-item-modal-title">팀 상품 추가</h3>
+    <div class="form-group">
+      <label>팀</label>
+      <select id="tsi-team" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; background:#fff; font-weight:600; outline:none;">
+        <option value="">팀 선택</option>
+      </select>
+    </div>
+    <div style="display:grid; grid-template-columns:64px 1fr; gap:8px;" class="form-group">
+      <div>
+        <label>이모지</label>
+        <input type="text" id="tsi-emoji" placeholder="🎁" maxlength="2" style="text-align:center; font-size:24px;">
+      </div>
+      <div>
+        <label>상품명</label>
+        <input type="text" id="tsi-name" placeholder="예: 치킨 1마리">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>설명</label>
+      <input type="text" id="tsi-desc" placeholder="간단한 설명 (선택)">
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
+      <div>
+        <label>총 가격 (팀 전체 합산)</label>
+        <input type="number" id="tsi-price" value="500" min="1">
+      </div>
+      <div>
+        <label>수량 (-1 = 무제한)</label>
+        <input type="number" id="tsi-stock" value="-1">
+      </div>
+    </div>
+    <p id="tsi-price-hint" style="font-size:12px; color:#7c3aed; font-weight:600; margin-bottom:12px;"></p>
+    <input type="hidden" id="tsi-edit-id">
+    <button class="btn btn-primary" onclick="saveTeamShopItem()">저장하기</button>
   </div>
 </div>
 
@@ -946,6 +1001,14 @@ document.getElementById('pw-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') adminLogin();
 });
 
+// 팀 상품 모달 — 팀/가격 변경 시 힌트 업데이트
+document.addEventListener('change', e => {
+  if (e.target.id === 'tsi-team' || e.target.id === 'tsi-price') updateTsiPriceHint();
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'tsi-price') updateTsiPriceHint();
+});
+
 // ── 팀 게임 관리 ──────────────────────────────────
 let _teamModeData = { enabled: false, teams: [] };
 
@@ -1067,7 +1130,7 @@ function openTeamModal(idx = -1) {
         <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">👑 팀장 닉네임 <span style="font-weight:400;color:#94a3b8;">(선택)</span></label>
         <input id="te-leader" type="text" value="${escHtml(team.leader||'')}" placeholder="팀장 닉네임 입력"
           style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;box-sizing:border-box;outline:none;">
-        <p style="font-size:11px;color:#94a3b8;margin-top:4px;">팀장은 상점에서 팀 전용 상품을 추가·삭제할 수 있어요</p>
+        <p style="font-size:11px;color:#94a3b8;margin-top:4px;">팀을 대표하는 팀원 닉네임을 입력해요 (선택)</p>
       </div>
       <div style="display:flex;gap:8px;">
         <button onclick="saveTeamEdit()" style="flex:1;padding:13px;background:#7c3aed;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;">저장</button>
@@ -1375,6 +1438,7 @@ function switchTab(id, btn) {
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
   if (id === 'settings') { loadGamePeriod(); loadTransferLimit(); loadTransferLog(); }
   if (id === 'teams') loadTeamModeAdmin();
+  if (id === 'shop')  updateTeamShopSelects();
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
@@ -1387,6 +1451,7 @@ function initAdmin() {
   listenQuizBank();
   listenQRCodes();
   listenShopItems();
+  listenTeamShopItems();
 }
 
 function injectAnnounceCard() {
@@ -2527,6 +2592,142 @@ async function deleteShopItem(id) {
   if (!confirm('이 상품을 삭제할까요?')) return;
   await db.collection('shop_items').doc(id).delete();
   showToast('상품이 삭제됐어요');
+}
+
+// ── 팀 전용 상품 관리 ─────────────────────────
+let teamShopItemsData = [];
+
+function listenTeamShopItems() {
+  db.collection('team_shop_items').onSnapshot(snap => {
+    teamShopItemsData = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(i => i.enabled !== false);
+    renderTeamShopItems();
+  });
+}
+
+function updateTeamShopSelects() {
+  const teams = _teamModeData?.teams || [];
+  ['team-shop-filter', 'tsi-team'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const cur = sel.value;
+    const placeholder = selId === 'team-shop-filter' ? '전체 팀' : '팀 선택';
+    sel.innerHTML = `<option value="">${placeholder}</option>` +
+      teams.map(t => `<option value="${t.id}" ${cur===t.id?'selected':''}>${t.emoji||''} ${escHtml(t.name)}</option>`).join('');
+  });
+}
+
+function renderTeamShopItems() {
+  const el = document.getElementById('team-shop-items-list');
+  if (!el) return;
+  const filterTeam = document.getElementById('team-shop-filter')?.value || '';
+  const items = filterTeam
+    ? teamShopItemsData.filter(i => i.teamId === filterTeam)
+    : teamShopItemsData;
+
+  if (!items.length) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:16px;">팀 상품이 없어요. 추가해보세요!</p>';
+    return;
+  }
+  el.innerHTML = items.map(item => {
+    const team = (_teamModeData?.teams||[]).find(t => t.id === item.teamId);
+    const teamBadge = team
+      ? `<span style="background:${team.color||'#7c3aed'}22;color:${team.color||'#7c3aed'};padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700;margin-left:6px;">${team.emoji||''} ${escHtml(team.name)}</span>`
+      : '';
+    const stockTxt = item.stock < 0 ? '무제한' : `${item.stock}개`;
+    return `
+      <div class="item-card">
+        <div style="font-size:32px; width:44px; text-align:center; flex-shrink:0;">${item.emoji||'🎁'}</div>
+        <div class="item-info">
+          <h4>${escHtml(item.name)}${teamBadge}</h4>
+          <p>⭐ 총 ${item.price}점 · 재고: ${stockTxt}</p>
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-primary btn-sm" onclick="editTeamShopItem('${item.id}')">수정</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteTeamShopItem('${item.id}')">삭제</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openTeamShopItemModal(editId) {
+  updateTeamShopSelects();
+  document.getElementById('team-shop-item-modal-title').textContent = editId ? '팀 상품 수정' : '팀 상품 추가';
+  document.getElementById('tsi-edit-id').value = editId || '';
+  if (!editId) {
+    const preTeam = document.getElementById('team-shop-filter')?.value || '';
+    document.getElementById('tsi-team').value  = preTeam;
+    document.getElementById('tsi-emoji').value = '';
+    document.getElementById('tsi-name').value  = '';
+    document.getElementById('tsi-desc').value  = '';
+    document.getElementById('tsi-price').value = '500';
+    document.getElementById('tsi-stock').value = '-1';
+    document.getElementById('tsi-price-hint').textContent = '';
+  }
+  document.getElementById('team-shop-item-modal').classList.add('visible');
+  updateTsiPriceHint();
+}
+
+function editTeamShopItem(id) {
+  const item = teamShopItemsData.find(i => i.id === id);
+  if (!item) return;
+  updateTeamShopSelects();
+  document.getElementById('tsi-team').value  = item.teamId || '';
+  document.getElementById('tsi-emoji').value = item.emoji || '';
+  document.getElementById('tsi-name').value  = item.name || '';
+  document.getElementById('tsi-desc').value  = item.description || '';
+  document.getElementById('tsi-price').value = item.price || 500;
+  document.getElementById('tsi-stock').value = item.stock ?? -1;
+  openTeamShopItemModal(id);
+}
+
+async function updateTsiPriceHint() {
+  const teamId = document.getElementById('tsi-team')?.value;
+  const price  = parseInt(document.getElementById('tsi-price')?.value) || 0;
+  const hint   = document.getElementById('tsi-price-hint');
+  if (!hint) return;
+  if (!teamId || !price) { hint.textContent = ''; return; }
+  try {
+    const snap = await db.collection('participants').where('team','==',teamId).get();
+    const count = snap.size || 1;
+    hint.textContent = `현재 팀원 ${count}명 → 1인당 약 ${Math.ceil(price/count)}점`;
+  } catch(e) { hint.textContent = ''; }
+}
+
+async function saveTeamShopItem() {
+  const teamId = document.getElementById('tsi-team').value;
+  const emoji  = document.getElementById('tsi-emoji').value.trim() || '🎁';
+  const name   = document.getElementById('tsi-name').value.trim();
+  const desc   = document.getElementById('tsi-desc').value.trim();
+  const price  = parseInt(document.getElementById('tsi-price').value);
+  const stock  = parseInt(document.getElementById('tsi-stock').value);
+  const editId = document.getElementById('tsi-edit-id').value;
+
+  if (!teamId)         { showToast('팀을 선택해주세요'); return; }
+  if (!name)           { showToast('상품명을 입력해주세요'); return; }
+  if (!price || price < 1) { showToast('총 가격을 입력해주세요'); return; }
+
+  const data = { teamId, emoji, name, description: desc, price, stock: isNaN(stock) ? -1 : Math.max(-1, stock), enabled: true };
+  try {
+    if (editId) {
+      await db.collection('team_shop_items').doc(editId).update(data);
+      showToast('팀 상품이 수정됐어요');
+    } else {
+      data.createdAt = new Date().toISOString();
+      await db.collection('team_shop_items').add(data);
+      showToast('팀 상품이 추가됐어요');
+    }
+    closeModal('team-shop-item-modal');
+  } catch(e) {
+    showToast('저장 실패: ' + e.message);
+  }
+}
+
+async function deleteTeamShopItem(id) {
+  if (!confirm('이 팀 상품을 삭제할까요?')) return;
+  await db.collection('team_shop_items').doc(id).delete();
+  showToast('팀 상품이 삭제됐어요');
 }
 
 // ── 포인트 지급 모달 ──────────────────────────

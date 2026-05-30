@@ -147,43 +147,6 @@
     </div>
   </div>
 
-  <!-- 팀 상품 추가 모달 (팀장 전용) -->
-  <div class="modal-overlay" id="add-team-item-modal">
-    <div class="modal" style="max-height:90vh; overflow-y:auto;">
-      <button class="modal-close" onclick="closeAddTeamItemModal()">✕</button>
-      <h3>팀 상품 추가</h3>
-      <div class="form-group" style="margin-top:12px;">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">이모지</label>
-        <input id="ti-emoji" type="text" maxlength="2" value="🎁"
-          style="width:100%; padding:10px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:24px; text-align:center; box-sizing:border-box; outline:none;">
-      </div>
-      <div class="form-group">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">상품명</label>
-        <input id="ti-name" type="text" maxlength="30" placeholder="예: 치킨 1마리"
-          style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; box-sizing:border-box; outline:none;">
-      </div>
-      <div class="form-group">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">설명</label>
-        <input id="ti-desc" type="text" maxlength="60" placeholder="상품 설명 (선택)"
-          style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; box-sizing:border-box; outline:none;">
-      </div>
-      <div class="form-group">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">총 가격 (팀원 전체가 나눠 낼 금액)</label>
-        <input id="ti-price" type="number" min="1" placeholder="예: 500"
-          style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:18px; font-weight:800; text-align:center; box-sizing:border-box; outline:none;">
-        <p id="ti-price-hint" style="font-size:12px; color:#7c3aed; margin-top:4px; font-weight:600;"></p>
-      </div>
-      <div class="form-group">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">재고 수량</label>
-        <input id="ti-stock" type="number" min="-1" value="1" placeholder="-1 = 무제한"
-          style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; box-sizing:border-box; outline:none;">
-        <p style="font-size:11px; color:#94a3b8; margin-top:4px;">-1 입력 시 무제한</p>
-      </div>
-      <button class="btn" style="background:#7c3aed; color:#fff; font-weight:700;" onclick="saveTeamItem()">
-        상품 등록
-      </button>
-    </div>
-  </div>
 
   <!-- 구매 확인 모달 -->
   <div class="modal-overlay" id="buy-modal">
@@ -216,12 +179,11 @@
     let pendingItem = null;
 
     // ── 팀 상점 관련 상태 ─────────────────────────
-    let myTeamId     = null;
-    let myTeamData   = null;
-    let isTeamLeader = false;
-    let teamItemsData    = [];
-    let teamMemberCount  = 0;
-    let pendingTeamItem  = null;
+    let myTeamId        = null;
+    let myTeamData      = null;
+    let teamItemsData   = [];
+    let teamMemberCount = 0;
+    let pendingTeamItem = null;
 
     // ── 탭 전환 ──────────────────────────────────
     function switchShopTab(id, btn) {
@@ -274,17 +236,15 @@
         const snap = await db.collection('config').doc('teamMode').get();
         const tm = snap.data();
         myTeamData = (tm?.teams || []).find(t => t.id === myTeamId) || null;
-        isTeamLeader = !!(myTeamData?.leader && myTeamData.leader === nickname);
-
         tab.style.display = 'block';
         costEl.style.display = 'block';
 
         const label = document.getElementById('team-shop-label');
         if (myTeamData) {
-          label.innerHTML = `<span style="color:${myTeamData.color||'#7c3aed'}; font-size:18px;">${myTeamData.emoji||'🏆'}</span> ${escHtml(myTeamData.name)} 팀 전용 상점${isTeamLeader ? ' 👑' : ''}`;
+          label.innerHTML = `<span style="color:${myTeamData.color||'#7c3aed'}; font-size:18px;">${myTeamData.emoji||'🏆'}</span> ${escHtml(myTeamData.name)} 팀 전용 상점`;
         }
 
-        addBtn.style.display = isTeamLeader ? 'block' : 'none';
+        addBtn.style.display = 'none';
 
         // 팀원 수 로드
         const membersSnap = await db.collection('participants').where('team', '==', myTeamId).get();
@@ -317,9 +277,7 @@
       if (!grid) return;
       if (!myTeamId) { grid.innerHTML = '<div class="empty-msg">팀에 참여해야 이용할 수 있어요</div>'; return; }
       if (teamItemsData.length === 0) {
-        grid.innerHTML = isTeamLeader
-          ? '<div class="empty-msg">아직 팀 상품이 없어요<br><small style="color:#7c3aed;font-weight:600;">+ 상품 추가 버튼으로 등록해보세요</small></div>'
-          : '<div class="empty-msg">등록된 팀 상품이 없어요</div>';
+        grid.innerHTML = '<div class="empty-msg">등록된 팀 상품이 없어요</div>';
         return;
       }
 
@@ -334,33 +292,22 @@
         if (soldOut) btnText = '품절';
         else if (cantAfford) btnText = '포인트 부족';
 
-        const leaderBtns = isTeamLeader ? `
-          <div class="team-item-leader-btns">
-            <button class="team-item-leader-btn" style="background:#f1f5f9;color:#374151;"
-              onclick="openEditTeamItemModal('${item.id}')">✏️ 수정</button>
-            <button class="team-item-leader-btn" style="background:#fef2f2;color:#dc2626;"
-              onclick="deleteTeamItem('${item.id}', '${escHtml(item.name)}')">🗑️ 삭제</button>
-          </div>` : '';
-
         return `
-          <div class="item-card" style="flex-direction:column; align-items:flex-start; gap:10px;">
-            <div style="display:flex; align-items:center; gap:14px; width:100%;">
-              <div class="item-emoji">${item.emoji || '🎁'}</div>
-              <div class="item-info">
-                <div class="item-name">${escHtml(item.name)}</div>
-                <div class="item-desc">${escHtml(item.description || '')}</div>
-                <div class="item-meta">
-                  <span class="item-price">⭐ 총 ${item.price}점</span>
-                  <span class="item-stock">${stockTxt}</span>
-                </div>
-                <div style="font-size:12px; color:#7c3aed; font-weight:700; margin-top:4px;">
-                  팀원 ${perCount}명 → 1인당 ${perCost}점
-                </div>
+          <div class="item-card">
+            <div class="item-emoji">${item.emoji || '🎁'}</div>
+            <div class="item-info">
+              <div class="item-name">${escHtml(item.name)}</div>
+              <div class="item-desc">${escHtml(item.description || '')}</div>
+              <div class="item-meta">
+                <span class="item-price">⭐ 총 ${item.price}점</span>
+                <span class="item-stock">${stockTxt}</span>
               </div>
-              <button class="buy-btn" ${disabled ? 'disabled' : ''}
-                onclick="openTeamBuyModal('${item.id}')">${btnText}</button>
+              <div style="font-size:12px; color:#7c3aed; font-weight:700; margin-top:4px;">
+                팀원 ${perCount}명 → 1인당 ${perCost}점
+              </div>
             </div>
-            ${leaderBtns}
+            <button class="buy-btn" ${disabled ? 'disabled' : ''}
+              onclick="openTeamBuyModal('${item.id}')">${btnText}</button>
           </div>`;
       }).join('');
     }
@@ -467,93 +414,6 @@
       }
     }
 
-    // ── 팀 상품 추가/수정 모달 (팀장) ────────────
-    let _editingTeamItemId = null;
-
-    function openAddTeamItemModal() {
-      _editingTeamItemId = null;
-      document.getElementById('ti-emoji').value = '🎁';
-      document.getElementById('ti-name').value  = '';
-      document.getElementById('ti-desc').value  = '';
-      document.getElementById('ti-price').value = '';
-      document.getElementById('ti-stock').value = '1';
-      document.getElementById('ti-price-hint').textContent = '';
-      document.querySelector('#add-team-item-modal h3').textContent = '팀 상품 추가';
-      document.getElementById('add-team-item-modal').classList.add('visible');
-      updatePriceHint();
-    }
-
-    function openEditTeamItemModal(itemId) {
-      const item = teamItemsData.find(i => i.id === itemId);
-      if (!item) return;
-      _editingTeamItemId = itemId;
-      document.getElementById('ti-emoji').value = item.emoji || '🎁';
-      document.getElementById('ti-name').value  = item.name || '';
-      document.getElementById('ti-desc').value  = item.description || '';
-      document.getElementById('ti-price').value = item.price || '';
-      document.getElementById('ti-stock').value = item.stock ?? 1;
-      document.querySelector('#add-team-item-modal h3').textContent = '팀 상품 수정';
-      document.getElementById('add-team-item-modal').classList.add('visible');
-      updatePriceHint();
-    }
-
-    function updatePriceHint() {
-      const price = parseInt(document.getElementById('ti-price')?.value) || 0;
-      const hint  = document.getElementById('ti-price-hint');
-      if (!hint) return;
-      if (price > 0 && teamMemberCount > 0) {
-        const per = Math.ceil(price / teamMemberCount);
-        hint.textContent = `현재 팀원 ${teamMemberCount}명 기준 → 1인당 약 ${per}점`;
-      } else {
-        hint.textContent = '';
-      }
-    }
-
-    function closeAddTeamItemModal() {
-      document.getElementById('add-team-item-modal').classList.remove('visible');
-      _editingTeamItemId = null;
-    }
-
-    async function saveTeamItem() {
-      if (!isTeamLeader || !myTeamId) return;
-      const emoji = document.getElementById('ti-emoji').value.trim() || '🎁';
-      const name  = document.getElementById('ti-name').value.trim();
-      const desc  = document.getElementById('ti-desc').value.trim();
-      const price = parseInt(document.getElementById('ti-price').value);
-      const stock = parseInt(document.getElementById('ti-stock').value);
-
-      if (!name)           { showToast('상품명을 입력해주세요'); return; }
-      if (!price || price < 1) { showToast('가격을 올바르게 입력해주세요'); return; }
-      if (isNaN(stock))    { showToast('재고를 입력해주세요'); return; }
-
-      const data = { teamId: myTeamId, emoji, name, description: desc, price, stock, enabled: true };
-
-      try {
-        if (_editingTeamItemId) {
-          await db.collection('team_shop_items').doc(_editingTeamItemId).update(data);
-          showToast('✅ 상품이 수정됐어요');
-        } else {
-          data.createdAt = new Date().toISOString();
-          data.createdBy = nickname;
-          await db.collection('team_shop_items').add(data);
-          showToast('✅ 팀 상품이 등록됐어요');
-        }
-        closeAddTeamItemModal();
-      } catch(e) {
-        showToast('저장에 실패했어요: ' + e.message);
-      }
-    }
-
-    async function deleteTeamItem(itemId, itemName) {
-      if (!isTeamLeader) return;
-      if (!confirm(`"${itemName}" 상품을 삭제할까요?`)) return;
-      try {
-        await db.collection('team_shop_items').doc(itemId).update({ enabled: false });
-        showToast('🗑️ 상품이 삭제됐어요');
-      } catch(e) {
-        showToast('삭제 실패: ' + e.message);
-      }
-    }
 
     // ── 내 주문 내역 실시간 ───────────────────────
     let myOrders = [];
@@ -766,13 +626,6 @@
     document.getElementById('team-buy-modal').addEventListener('click', e => {
       if (e.target === document.getElementById('team-buy-modal')) closeTeamModal();
     });
-    document.getElementById('add-team-item-modal').addEventListener('click', e => {
-      if (e.target === document.getElementById('add-team-item-modal')) closeAddTeamItemModal();
-    });
-
-    // 가격 입력 시 힌트 업데이트
-    document.getElementById('ti-price')?.addEventListener('input', updatePriceHint);
-
     // 초기 탭 display 맞추기
     document.getElementById('tab-items').style.display = 'flex';
     document.getElementById('tab-items').style.flexDirection = 'column';
