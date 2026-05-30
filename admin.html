@@ -364,7 +364,13 @@
       <div class="card mt-16">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <h3 style="font-weight:700;">참가자 관리</h3>
-          <span id="participants-mgr-count" style="font-size:13px; color:#94a3b8;"></span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="participants-mgr-count" style="font-size:13px; color:#94a3b8;"></span>
+            <button class="btn btn-danger btn-sm" onclick="deleteAllParticipants()"
+              style="font-size:12px; padding:5px 10px; background:#ef4444; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700;">
+              🗑 전체 삭제
+            </button>
+          </div>
         </div>
         <div id="participant-manager-list">
           <p class="text-muted text-center" style="padding:16px;">참가자가 없어요</p>
@@ -2202,11 +2208,40 @@ function exportResultsCSV() {
 // ── 설정 ─────────────────────────────────────────
 async function deleteParticipantById(nick) {
   if (!confirm(`"${nick}" 참가자를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
-  // 기기 잠금 해제: deviceId 필드를 null로 초기화한 뒤 문서 삭제
-  // (participants 컬렉션에서 deviceId로 조회하는 DEVICE_LOCK 로직 해제)
-  await db.collection('participants').doc(nick).update({ deviceId: null }).catch(() => {});
-  await db.collection('participants').doc(nick).delete();
-  showToast(`${nick} 삭제됐어요`);
+  try {
+    // 기기 잠금 해제: deviceId 필드를 null로 초기화한 뒤 문서 삭제
+    await db.collection('participants').doc(nick).update({ deviceId: null }).catch(() => {});
+    await db.collection('participants').doc(nick).delete();
+    showToast(`${nick} 삭제됐어요`);
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message);
+  }
+}
+
+async function deleteAllParticipants() {
+  const countEl = document.getElementById('participants-mgr-count');
+  const countText = countEl?.textContent || '';
+  if (!confirm(`참가자 전체를 삭제할까요?\n${countText}\n이 작업은 되돌릴 수 없어요.`)) return;
+
+  const btn = document.querySelector('[onclick="deleteAllParticipants()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+
+  try {
+    const snap = await db.collection('participants').get();
+    if (!snap.docs.length) { showToast('삭제할 참가자가 없어요'); return; }
+
+    const chunkSize = 500;
+    for (let i = 0; i < snap.docs.length; i += chunkSize) {
+      const batch = db.batch();
+      snap.docs.slice(i, i + chunkSize).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    showToast(`✅ 참가자 ${snap.docs.length}명 전체 삭제됐어요`);
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 전체 삭제'; }
+  }
 }
 
 async function resetAll() {
