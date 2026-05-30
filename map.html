@@ -1989,21 +1989,18 @@
           return;
         }
 
-        // 보내는 사람 최신 포인트 재확인
-        const fromSnap = await db.collection('participants').doc(nickname).get();
-        if (!fromSnap.exists) throw new Error('sender_not_found');
-        const curPoints = fromSnap.data().points || 0;
-        if (curPoints < amount) throw new Error('insufficient');
-
-        // 포인트 이동 (배치 쓰기 - 카카오톡 브라우저 호환)
-        const batch = db.batch();
-        batch.update(db.collection('participants').doc(nickname), {
-          points: firebase.firestore.FieldValue.increment(-amount),
+        // 포인트 이동 — 트랜잭션으로 동시성 보호
+        await db.runTransaction(async tx => {
+          const fromRef = db.collection('participants').doc(nickname);
+          const fromSnap = await tx.get(fromRef);
+          if (!fromSnap.exists) throw new Error('sender_not_found');
+          const curPoints = fromSnap.data().points || 0;
+          if (curPoints < amount) throw new Error('insufficient');
+          tx.update(fromRef, { points: firebase.firestore.FieldValue.increment(-amount) });
+          tx.update(db.collection('participants').doc(toNick), {
+            points: firebase.firestore.FieldValue.increment(amount),
+          });
         });
-        batch.update(db.collection('participants').doc(toNick), {
-          points: firebase.firestore.FieldValue.increment(amount),
-        });
-        await batch.commit();
 
         // 전송 로그 (실패해도 무시)
         db.collection('transfers').add({
@@ -2103,25 +2100,22 @@
           return;
         }
 
-        // 최신 상품·포인트 확인
-        const iSnap = await db.collection('shop_items').doc(item.id).get();
-        if (!iSnap.exists) throw new Error('상품 없음');
-        const stock = iSnap.data().stock;
-        const price = iSnap.data().price;
-        if (stock === 0) throw new Error('품절');
-        if ((participant.points || 0) < price) throw new Error('포인트 부족');
-
-        // 배치 쓰기
-        const batch = db.batch();
-        batch.update(db.collection('participants').doc(nickname), {
-          points: firebase.firestore.FieldValue.increment(-price),
+        // 트랜잭션으로 재고·포인트 동시 확인 및 차감
+        let finalPrice = item.price;
+        await db.runTransaction(async tx => {
+          const iRef = db.collection('shop_items').doc(item.id);
+          const pRef = db.collection('participants').doc(nickname);
+          const [iSnap, pSnap] = await Promise.all([tx.get(iRef), tx.get(pRef)]);
+          if (!iSnap.exists) throw new Error('상품 없음');
+          finalPrice = iSnap.data().price;
+          const stock = iSnap.data().stock;
+          if (stock === 0) throw new Error('품절');
+          const curPts = pSnap.data()?.points || 0;
+          if (curPts < finalPrice) throw new Error('포인트 부족');
+          tx.update(pRef, { points: firebase.firestore.FieldValue.increment(-finalPrice) });
+          tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
         });
-        if (stock > 0) {
-          batch.update(db.collection('shop_items').doc(item.id), {
-            stock: firebase.firestore.FieldValue.increment(-1),
-          });
-        }
-        await batch.commit();
+        const price = finalPrice;
 
         // 주문 등록 (수신자 이름으로) — 실패 시 2초 후 재시도
         const orderData = {

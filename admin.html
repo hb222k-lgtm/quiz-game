@@ -2212,7 +2212,7 @@ async function resetAll() {
   for (let i = 0; i < pSnap.docs.length; i += chunkSize) {
     const batch = db.batch();
     pSnap.docs.slice(i, i + chunkSize).forEach(d => {
-      batch.update(d.ref, { points: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {} });
+      batch.update(d.ref, { points: 0, earnedPoints: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {}, badges: [], claimedMilestones: [] });
     });
     await batch.commit();
   }
@@ -2462,9 +2462,10 @@ async function givePoints() {
     }
   }
 
-  await db.collection('participants').doc(nickname).update({
-    points: firebase.firestore.FieldValue.increment(amount)
-  });
+  const updateData = { points: firebase.firestore.FieldValue.increment(amount) };
+  // 지급(+)일 때만 earnedPoints도 반영 (차감은 earnedPoints 유지)
+  if (amount > 0) updateData.earnedPoints = firebase.firestore.FieldValue.increment(amount);
+  await db.collection('participants').doc(nickname).update(updateData);
 
   const msg = amount > 0
     ? `${nickname}에게 +${amount}점 지급 완료!`
