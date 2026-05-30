@@ -1594,6 +1594,7 @@
 
     // ── 팀 순위 ────────────────────────────────────
     let _teamConfig    = null;   // { enabled, teams: [{id,name,color,emoji}] }
+    let _lastTeamsSnap = null;   // 최신 participants 스냅샷 캐시
     let _myTeamRank    = null;
     let _myTeamPts     = null;
     let _teamRankCooldown = 0;
@@ -1748,6 +1749,8 @@
           }
         }
         updateTeamActionUI();
+        // 즉시 팀 리스트 재렌더 (onSnapshot 타이밍 이슈 방지)
+        if (_lastTeamsSnap && _teamConfig?.teams) renderTeamsList(_lastTeamsSnap, _teamConfig.teams);
         showToast(`✅ ${newTeamName} 팀${isJoining ? '에 참여했어요!' : '으로 이동했어요!'}`);
       } catch(e) {
         showToast('팀 변경 실패: ' + e.message);
@@ -1788,6 +1791,8 @@
         const badge = document.getElementById('header-team-badge');
         if (badge) { badge.style.display = 'none'; badge.textContent = ''; }
         updateTeamActionUI();
+        // 즉시 팀 리스트 재렌더 (onSnapshot 타이밍 이슈 방지)
+        if (_lastTeamsSnap && _teamConfig?.teams) renderTeamsList(_lastTeamsSnap, _teamConfig.teams);
         showToast(`✅ ${myTeam.name} 팀에서 탈퇴했어요`);
       } catch(e) {
         showToast('탈퇴 실패: ' + e.message);
@@ -1804,6 +1809,7 @@
             '<div style="text-align:center;padding:40px;color:#94a3b8;">팀 게임이 비활성화 상태예요</div>';
           return;
         }
+        _lastTeamsSnap = snap;   // 항상 최신 스냅샷 캐시
         renderTeamsList(snap, _teamConfig.teams);
       });
     }
