@@ -2470,16 +2470,24 @@ function renderPendingOrders(orders) {
     return;
   }
 
-  el.innerHTML = orders.map(o => `
-    <div class="rank-row" style="margin-bottom:8px; border:2px solid #fef08a;">
+  el.innerHTML = orders.map(o => {
+    const teamLabel = o.teamOrder
+      ? `<span style="font-size:11px;background:#f5f3ff;color:#7c3aed;padding:1px 7px;border-radius:8px;font-weight:700;margin-left:4px;">🏷️팀(${o.memberCount}명)</span>`
+      : '';
+    return `
+    <div class="rank-row" style="margin-bottom:8px; border:2px solid #fef08a; flex-wrap:wrap; gap:8px;">
       <div style="font-size:28px; margin-right:10px; flex-shrink:0;">${o.emoji || '🎁'}</div>
-      <div class="rank-info">
-        <div class="rank-name">${escHtml(o.nickname)}</div>
+      <div class="rank-info" style="flex:1; min-width:0;">
+        <div class="rank-name">${escHtml(o.nickname)}${teamLabel}</div>
         <div class="rank-detail">${escHtml(o.itemName)} · ${o.price}점</div>
         <div style="font-size:11px; color:#94a3b8;">${o.purchasedAt ? new Date(o.purchasedAt).toLocaleString('ko-KR') : ''}</div>
       </div>
-      <span style="font-size:12px; background:#fef9c3; color:#854d0e; padding:4px 10px; border-radius:10px; font-weight:600; white-space:nowrap;">전달 대기</span>
-    </div>`).join('');
+      <button data-order-id="${o.id}" onclick="confirmOrder(this.dataset.orderId)"
+        style="background:#16a34a;color:#fff;border:none;border-radius:10px;
+               padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;
+               white-space:nowrap;flex-shrink:0;">✅ 수령 확인</button>
+    </div>`;
+  }).join('');
 }
 
 async function confirmOrder(orderId) {
