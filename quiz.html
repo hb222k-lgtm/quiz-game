@@ -162,6 +162,13 @@
     let attempts = 0;
     let currentQuestion = null; // 현재 표시 중인 문제 (pool/fixed 공통)
 
+    // ── 퀴즈 세션 저장/복원 (새로고침 치팅 방지) ──────
+    function clearActiveQuiz() {
+      return db.collection('participants').doc(nickname).update({
+        activeQuiz: firebase.firestore.FieldValue.delete()
+      }).catch(() => {});
+    }
+
     async function init() {
       if (!nickname || !locId) return;  // redirect 후 실행 방지
       try {
@@ -293,12 +300,27 @@
           document.getElementById('quiz-loading').style.display = 'none';
         }
       } else {
-        showQuiz(loc);
+        showQuiz(loc, participant);
       }
     }
 
     async function assignAndShowPoolQuiz(loc, participant) {
-      // 활성화된 문제 목록 가져오기
+      // ── 새로고침 복원: 이미 진행 중인 세션이 있으면 동일 문제 + 남은 시간 복원 ──
+      const aq = participant?.activeQuiz;
+      if (aq && aq.locId === loc.id && aq.questionId && typeof aq.startedAt === 'number') {
+        const elapsed  = Math.floor((Date.now() - aq.startedAt) / 1000);
+        const remaining = Math.max(0, QUIZ_TIME - elapsed);
+        try {
+          const qSnap = await db.collection('quiz_bank').doc(aq.questionId).get();
+          if (qSnap.exists) {
+            attempts = aq.attempts || 0;
+            showPoolQuiz(loc, { id: qSnap.id, ...qSnap.data() }, remaining, aq.wrongIndices || []);
+            return;
+          }
+        } catch(e) { /* 문제 로드 실패 시 새 문제 배정 */ }
+      }
+
+      // ── 신규 세션: 문제 배정 ──
       const bankSnap = await db.collection('quiz_bank').where('enabled', '==', true).get();
       const allQuestions = bankSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -315,10 +337,15 @@
         .map(q => ({ ...q, count: stats[q.id] || 0 }))
         .sort((a, b) => a.count - b.count || Math.random() - 0.5)[0];
 
-      showPoolQuiz(loc, chosen);
+      // Firestore에 세션 저장 (새로고침 방지용)
+      db.collection('participants').doc(nickname).update({
+        activeQuiz: { locId: loc.id, questionId: chosen.id, startedAt: Date.now(), attempts: 0, wrongIndices: [] }
+      }).catch(e => console.warn('activeQuiz 저장 오류:', e));
+
+      showPoolQuiz(loc, chosen, QUIZ_TIME, []);
     }
 
-    function showPoolQuiz(loc, question) {
+    function showPoolQuiz(loc, question, startSec = QUIZ_TIME, restoredWrongIndices = []) {
       currentQuestion = question;
       document.getElementById('quiz-body').style.display = 'block';
       document.getElementById('question-text').textContent = question.question;
@@ -332,15 +359,43 @@
         btn.onclick = () => answer(i, question.correctIndex, loc.quiz?.points || 0, loc.id);
         container.appendChild(btn);
       });
-      startQuizTimer(() => handleTimeUp(loc.quiz?.points || 0, loc.id));
+
+      // 이전 세션에서 틀린 보기 복원
+      restoredWrongIndices.forEach(wi => {
+        const b = container.children[wi];
+        if (b) { b.classList.add('wrong'); b.disabled = true; }
+      });
+      if (attempts >= 1 && restoredWrongIndices.length > 0) {
+        const rb = document.getElementById('result-box');
+        rb.innerHTML = '😅 틀렸어요! 한 번 더 기회가 있어요.';
+        rb.className = 'result-box show result-wrong';
+      }
+
+      if (startSec <= 0) { handleTimeUp(loc.quiz?.points || 0, loc.id); return; }
+      startQuizTimer(() => handleTimeUp(loc.quiz?.points || 0, loc.id), startSec);
     }
 
-    function showQuiz(loc) {
+    function showQuiz(loc, participant) {
       const quiz = loc.quiz;
       if (!quiz || !quiz.question) {
         showToast('퀴즈 정보가 없어요');
         setTimeout(() => window.location.href='map.html', 1500);
         return;
+      }
+
+      // ── 새로고침 복원: 남은 시간 + 틀린 보기 복원 ──
+      let startSec = QUIZ_TIME;
+      let restoredWrongIndices = [];
+      const aq = participant?.activeQuiz;
+      if (aq && aq.locId === loc.id && typeof aq.startedAt === 'number') {
+        const elapsed = Math.floor((Date.now() - aq.startedAt) / 1000);
+        startSec = Math.max(0, QUIZ_TIME - elapsed);
+        attempts = aq.attempts || 0;
+        restoredWrongIndices = aq.wrongIndices || [];
+      } else {
+        db.collection('participants').doc(nickname).update({
+          activeQuiz: { locId: loc.id, questionId: null, startedAt: Date.now(), attempts: 0, wrongIndices: [] }
+        }).catch(() => {});
       }
 
       currentQuestion = quiz;
@@ -356,7 +411,20 @@
         btn.onclick = () => answer(i, quiz.correctIndex, quiz.points, loc.id);
         container.appendChild(btn);
       });
-      startQuizTimer(() => handleTimeUp(quiz.points, loc.id));
+
+      // 이전 세션에서 틀린 보기 복원
+      restoredWrongIndices.forEach(wi => {
+        const b = container.children[wi];
+        if (b) { b.classList.add('wrong'); b.disabled = true; }
+      });
+      if (attempts >= 1 && restoredWrongIndices.length > 0) {
+        const rb = document.getElementById('result-box');
+        rb.innerHTML = '😅 틀렸어요! 한 번 더 기회가 있어요.';
+        rb.className = 'result-box show result-wrong';
+      }
+
+      if (startSec <= 0) { handleTimeUp(quiz.points, loc.id); return; }
+      startQuizTimer(() => handleTimeUp(quiz.points, loc.id), startSec);
     }
 
     async function answer(selected, correct, points, locId) {
@@ -390,6 +458,7 @@
         };
         await db.collection('participants').doc(nickname).update(updates);
         safeIncrementAssignment(locId, currentQuestion?.id);
+        clearActiveQuiz();
         // 업적 체크
         const extras = [];
         if (mult > 1) extras.push('golden');
@@ -412,7 +481,13 @@
           btns.forEach((b, i) => { if (i !== selected) b.disabled = false; });
           resultBox.innerHTML = `😅 틀렸어요! 한 번 더 기회가 있어요.`;
           resultBox.className = 'result-box show result-wrong';
-          startQuizTimer(() => handleTimeUp(points, locId)); // 남은 시간으로 2번째 도전
+          // 새로고침 시 같은 상태 복원을 위해 Firestore 업데이트
+          db.collection('participants').doc(nickname).update({
+            'activeQuiz.attempts': firebase.firestore.FieldValue.increment(1),
+            'activeQuiz.wrongIndices': firebase.firestore.FieldValue.arrayUnion(selected),
+            'activeQuiz.startedAt': Date.now()  // 2번째 도전 타이머 재시작 시각
+          }).catch(() => {});
+          startQuizTimer(() => handleTimeUp(points, locId)); // 2번째 도전 30초 새로 시작
         } else {
           // 2번 틀림 → 종료
           answered = true;
@@ -427,6 +502,7 @@
             completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
           });
           safeIncrementAssignment(locId, currentQuestion?.id);
+          clearActiveQuiz();
           autoRedirect();
         }
       }
@@ -479,9 +555,9 @@
     let _timerInterval = null;
     let _timerOnTimeUp = null;
 
-    function startQuizTimer(onTimeUp) {
+    function startQuizTimer(onTimeUp, startSec = QUIZ_TIME) {
       _timerOnTimeUp = onTimeUp;
-      let sec = QUIZ_TIME;
+      let sec = startSec;
       const wrap = document.getElementById('quiz-timer-wrap');
       wrap.style.display = 'flex';
       _updateTimerUI(sec);
@@ -535,6 +611,7 @@
           completedLocations: firebase.firestore.FieldValue.arrayUnion(locId),
         });
         safeIncrementAssignment(locId, currentQuestion?.id);
+        clearActiveQuiz();
       } catch(e) { console.error(e); }
       autoRedirect();
     }
