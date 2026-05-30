@@ -2202,12 +2202,9 @@ function exportResultsCSV() {
 // ── 설정 ─────────────────────────────────────────
 async function deleteParticipantById(nick) {
   if (!confirm(`"${nick}" 참가자를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
-  // deviceId 해제 먼저 (기기 잠금 해제) → 그다음 문서 삭제
-  const pSnap = await db.collection('participants').doc(nick).get();
-  const devId = pSnap.data()?.deviceId;
-  if (devId) {
-    db.collection('devices').doc(devId).delete().catch(() => {});
-  }
+  // 기기 잠금 해제: deviceId 필드를 null로 초기화한 뒤 문서 삭제
+  // (participants 컬렉션에서 deviceId로 조회하는 DEVICE_LOCK 로직 해제)
+  await db.collection('participants').doc(nick).update({ deviceId: null }).catch(() => {});
   await db.collection('participants').doc(nick).delete();
   showToast(`${nick} 삭제됐어요`);
 }
@@ -2800,10 +2797,11 @@ async function sendAnnouncement() {
 
   try {
     const payload = {
+      uid:     Date.now().toString(36) + Math.random().toString(36).slice(2),
       message,
-      type: _announceType,
-      title: TITLES[_announceType] || '공지',
-      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+      type:    _announceType,
+      title:   TITLES[_announceType] || '공지',
+      sentAt:  firebase.firestore.FieldValue.serverTimestamp(),
     };
     await db.collection('announcements').add(payload);
     // 참가자 map.html 리스너가 감지할 수 있도록 latestAnnouncement 문서도 갱신
