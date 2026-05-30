@@ -183,8 +183,8 @@
 
       <!-- 팀 전체 포인트 일괄 지급 -->
       <div class="card mt-16" style="margin-bottom:40px;">
-        <h3 style="font-weight:700; margin-bottom:4px;">💰 팀 전체 포인트 일괄 지급</h3>
-        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">선택한 팀의 모든 구성원에게 포인트를 한 번에 지급해요.</p>
+        <h3 style="font-weight:700; margin-bottom:4px;">💰 팀 전체 포인트 지급 / 차감</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:14px;">선택한 팀의 모든 구성원에게 포인트를 지급하거나 차감해요. <b>음수 입력 시 차감</b>돼요.</p>
         <div class="form-group">
           <label>팀 선택</label>
           <select id="bulk-team-select" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:14px; background:#fff; font-weight:600; outline:none;">
@@ -192,10 +192,10 @@
           </select>
         </div>
         <div class="form-group">
-          <label>지급 포인트</label>
-          <input type="number" id="bulk-team-points" value="100" min="1">
+          <label>포인트 (양수 = 지급 &nbsp;|&nbsp; 음수 = 차감)</label>
+          <input type="number" id="bulk-team-points" value="100">
         </div>
-        <button class="btn btn-primary" onclick="bulkAwardTeamPoints()">팀 전체에 지급</button>
+        <button class="btn btn-primary" onclick="bulkAwardTeamPoints()">팀 전체에 적용</button>
       </div>
 
     </div>
@@ -1063,6 +1063,12 @@ function openTeamModal(idx = -1) {
         </div>
         <input type="hidden" id="te-color" value="${team.color||'#7c3aed'}">
       </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">👑 팀장 닉네임 <span style="font-weight:400;color:#94a3b8;">(선택)</span></label>
+        <input id="te-leader" type="text" value="${escHtml(team.leader||'')}" placeholder="팀장 닉네임 입력"
+          style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;box-sizing:border-box;outline:none;">
+        <p style="font-size:11px;color:#94a3b8;margin-top:4px;">팀장은 상점에서 팀 전용 상품을 추가·삭제할 수 있어요</p>
+      </div>
       <div style="display:flex;gap:8px;">
         <button onclick="saveTeamEdit()" style="flex:1;padding:13px;background:#7c3aed;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;">저장</button>
         <button onclick="document.getElementById('team-edit-modal').remove()" style="padding:13px 16px;background:#f1f5f9;color:#64748b;border:none;border-radius:12px;font-size:14px;cursor:pointer;">취소</button>
@@ -1075,10 +1081,11 @@ function openTeamModal(idx = -1) {
 function editTeam(idx) { openTeamModal(idx); }
 
 async function saveTeamEdit() {
-  const name  = document.getElementById('te-name').value.trim();
-  const emoji = document.getElementById('te-emoji').value.trim();
-  const color = document.getElementById('te-color').value;
-  const id    = _editTeamIdx >= 0
+  const name   = document.getElementById('te-name').value.trim();
+  const emoji  = document.getElementById('te-emoji').value.trim();
+  const color  = document.getElementById('te-color').value;
+  const leader = document.getElementById('te-leader').value.trim();
+  const id     = _editTeamIdx >= 0
     ? _teamModeData.teams[_editTeamIdx].id
     : (document.getElementById('te-id').value.trim().replace(/\s+/g,'_').toLowerCase());
 
@@ -1086,12 +1093,12 @@ async function saveTeamEdit() {
   if (!id)   { showToast('팀 ID를 입력해주세요'); return; }
 
   if (_editTeamIdx >= 0) {
-    _teamModeData.teams[_editTeamIdx] = { id, name, color, emoji: emoji||'🏆' };
+    _teamModeData.teams[_editTeamIdx] = { id, name, color, emoji: emoji||'🏆', leader };
   } else {
     if (_teamModeData.teams.some(t => t.id === id)) {
       showToast('이미 같은 ID의 팀이 있어요'); return;
     }
-    _teamModeData.teams.push({ id, name, color, emoji: emoji||'🏆' });
+    _teamModeData.teams.push({ id, name, color, emoji: emoji||'🏆', leader });
   }
   await saveTeamMode();
   document.getElementById('team-edit-modal').remove();
@@ -1273,14 +1280,15 @@ async function saveTeamMilestones() {
   showToast('마일스톤이 저장됐어요');
 }
 
-// ── 팀 전체 포인트 일괄 지급 ─────────────────────────
+// ── 팀 전체 포인트 지급 / 차감 ─────────────────────────
 async function bulkAwardTeamPoints() {
   const teamId = document.getElementById('bulk-team-select').value;
-  const pts    = parseInt(document.getElementById('bulk-team-points').value) || 0;
+  const pts    = parseInt(document.getElementById('bulk-team-points').value);
   if (!teamId) { showToast('팀을 선택해주세요'); return; }
-  if (pts <= 0) { showToast('포인트를 올바르게 입력해주세요'); return; }
+  if (!pts || isNaN(pts)) { showToast('포인트를 입력해주세요'); return; }
   const teamName = (_teamModeData.teams || []).find(t => t.id === teamId)?.name || teamId;
-  if (!confirm(`"${teamName}" 팀 전원에게 ${pts}점을 지급할까요?`)) return;
+  const action = pts > 0 ? `${pts}점 지급` : `${Math.abs(pts)}점 차감`;
+  if (!confirm(`"${teamName}" 팀 전원에게 ${action}할까요?`)) return;
 
   const snap = await db.collection('participants').where('team', '==', teamId).get();
   if (snap.empty) { showToast('해당 팀에 참가자가 없어요'); return; }
@@ -1289,14 +1297,16 @@ async function bulkAwardTeamPoints() {
   for (let i = 0; i < snap.docs.length; i += chunkSize) {
     const batch = db.batch();
     snap.docs.slice(i, i + chunkSize).forEach(d => {
-      batch.update(d.ref, {
-        points:       firebase.firestore.FieldValue.increment(pts),
-        earnedPoints: firebase.firestore.FieldValue.increment(pts),
-      });
+      const updates = { points: firebase.firestore.FieldValue.increment(pts) };
+      if (pts > 0) updates.earnedPoints = firebase.firestore.FieldValue.increment(pts); // 지급만 누적
+      batch.update(d.ref, updates);
     });
     await batch.commit();
   }
-  showToast(`✅ "${teamName}" 팀 ${snap.size}명에게 ${pts}점 지급됐어요!`);
+  const msg = pts > 0
+    ? `✅ "${teamName}" 팀 ${snap.size}명에게 ${pts}점 지급됐어요!`
+    : `✅ "${teamName}" 팀 ${snap.size}명에서 ${Math.abs(pts)}점 차감됐어요!`;
+  showToast(msg);
 }
 
 function escHtml(s) {
