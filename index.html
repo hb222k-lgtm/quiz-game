@@ -237,10 +237,11 @@
         <div style="text-align:center; margin-bottom:18px;">
           <div style="font-size:40px; margin-bottom:8px;">🏆</div>
           <div style="font-size:18px; font-weight:900; color:#f3f0ff;">팀 선택</div>
-          <div style="font-size:13px; color:rgba(196,181,253,0.75); margin-top:4px;">참여할 팀을 골라주세요!</div>
+          <div style="font-size:13px; color:rgba(196,181,253,0.75); margin-top:4px;">참여할 팀을 고르거나, 나중에 커뮤니티에서 선택할 수 있어요</div>
         </div>
         <div id="team-buttons" style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;"></div>
         <button class="btn btn-primary" id="team-join-btn" style="width:100%; margin-bottom:8px;" onclick="confirmTeam()" disabled>이 팀으로 입장 🚀</button>
+        <button class="btn btn-outline" style="width:100%; font-size:13px; margin-bottom:8px;" onclick="skipTeamAndEnter()">⏭ 나중에 선택하기</button>
         <button class="btn btn-outline" style="width:100%; font-size:13px;" onclick="backToPin()">← 비밀번호 다시 입력</button>
       </div>
 
@@ -577,7 +578,8 @@
         try {
           const tmSnap = await db.collection('config').doc('teamMode').get();
           const tm = tmSnap.data();
-          if (tm?.enabled) {
+          const activeTeams = (tm?.teams || []).filter(t => t.id);
+          if (tm?.enabled && activeTeams.length > 0) {
             // 이미 팀이 있으면 바로 입장
             const existingTeam = _isExistingUser
               ? (await db.collection('participants').doc(name).get()).data()?.team
@@ -585,7 +587,7 @@
             if (!existingTeam) {
               _pendingTeamName = name;
               _pendingTeamIsNew = !_isExistingUser;
-              await showTeamStep(tm.teams || []);
+              await showTeamStep(activeTeams);
               btn.textContent = '입장 🚀'; btn.disabled = false;
               return;
             }
@@ -677,6 +679,12 @@
         showToast('오류가 발생했어요. 다시 시도해주세요.');
         btn.textContent = '이 팀으로 입장 🚀'; btn.disabled = false;
       }
+    }
+
+    function skipTeamAndEnter() {
+      if (!_pendingTeamName) return;
+      setNickname(_pendingTeamName);
+      window.location.href = 'map.html';
     }
 
     function backToPin() {
