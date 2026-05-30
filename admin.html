@@ -1292,7 +1292,7 @@ function openTeamMilestoneModal() {
       <div style="margin-bottom:14px;">
         <label style="font-size:13px;font-weight:700;color:#374151;display:block;margin-bottom:6px;">🏆 팀 포인트 합계 목표치</label>
         <div style="display:flex;align-items:center;gap:8px;">
-          <input id="ms-threshold" type="number" min="1" placeholder="예: 1000"
+          <input id="tm-threshold" type="number" min="1" placeholder="예: 1000"
             style="flex:1;padding:12px 14px;font-size:18px;font-weight:800;border:2px solid #e2e8f0;border-radius:12px;outline:none;font-family:inherit;text-align:center;"
             onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'">
           <span style="font-size:14px;font-weight:700;color:#64748b;flex-shrink:0;">점</span>
@@ -1301,7 +1301,7 @@ function openTeamMilestoneModal() {
       <div style="margin-bottom:24px;">
         <label style="font-size:13px;font-weight:700;color:#374151;display:block;margin-bottom:6px;">🎁 달성 시 팀원 1인당 보너스</label>
         <div style="display:flex;align-items:center;gap:8px;">
-          <input id="ms-bonus" type="number" min="1" placeholder="예: 50"
+          <input id="tm-bonus" type="number" min="1" placeholder="예: 50"
             style="flex:1;padding:12px 14px;font-size:18px;font-weight:800;border:2px solid #e2e8f0;border-radius:12px;outline:none;font-family:inherit;text-align:center;"
             onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'">
           <span style="font-size:14px;font-weight:700;color:#64748b;flex-shrink:0;">점</span>
@@ -1316,12 +1316,12 @@ function openTeamMilestoneModal() {
     </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
-  setTimeout(() => document.getElementById('ms-threshold')?.focus(), 100);
+  setTimeout(() => document.getElementById('tm-threshold')?.focus(), 100);
 }
 
 async function confirmAddTeamMilestone() {
-  const t = parseInt(document.getElementById('ms-threshold')?.value);
-  const b = parseInt(document.getElementById('ms-bonus')?.value);
+  const t = parseInt(document.getElementById('tm-threshold')?.value);
+  const b = parseInt(document.getElementById('tm-bonus')?.value);
   if (isNaN(t) || t <= 0) { showToast('목표 점수를 올바르게 입력해주세요'); return; }
   if (isNaN(b) || b <= 0) { showToast('보너스 점수를 올바르게 입력해주세요'); return; }
   if (_teamMilestones.some(m => m.threshold === t)) { showToast('이미 같은 목표 점수가 있어요'); return; }
