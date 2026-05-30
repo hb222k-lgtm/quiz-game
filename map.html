@@ -173,7 +173,7 @@
       <div>
         <div class="nickname" id="header-name">로딩 중...</div>
         <div style="font-size:12px; color:rgba(196,181,253,0.7); font-weight:600;" id="header-progress">
-          <span id="header-team-badge" style="display:none; margin-right:6px; font-weight:800;"></span>
+          <span id="header-team-badge" style="display:none; margin-right:6px; font-weight:800;"></span><span id="header-progress-text"></span>
         </div>
       </div>
       <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
@@ -335,6 +335,7 @@
         <input id="gift-to" type="text" placeholder="닉네임 입력"
           style="width:100%; box-sizing:border-box; padding:13px 14px; font-size:16px;
                  border:2px solid #e2e8f0; border-radius:12px; outline:none; font-family:inherit;"
+          oninput="onGiftNicknameInput()"
           onfocus="this.style.borderColor='#7c3aed'"
           onblur="this.style.borderColor='#e2e8f0'">
         <div id="gift-to-status" style="font-size:12px; margin-top:5px; min-height:18px;"></div>
@@ -932,7 +933,7 @@
         participant = snap.data();
         document.getElementById('header-points').textContent = participant.points || 0;
         document.getElementById('header-name').textContent = nickname;
-        document.getElementById('header-progress').textContent =
+        document.getElementById('header-progress-text').textContent =
           `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
         // 팀 배지 헤더 갱신
         if (_teamConfig?.enabled) {
@@ -971,7 +972,7 @@
       const snap = await db.collection('locations').where('enabled', '==', true).get();
       locations = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isLocationActive);
       locations.forEach(loc => renderLocationMarker(loc));
-      document.getElementById('header-progress').textContent =
+      document.getElementById('header-progress-text').textContent =
         `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
 
       // 장소 변경 실시간 감지
@@ -990,7 +991,7 @@
       participant = snap.data();
       document.getElementById('header-points').textContent = participant.points || 0;
       document.getElementById('header-name').textContent = nickname;
-      document.getElementById('header-progress').textContent =
+      document.getElementById('header-progress-text').textContent =
         `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
       locations.forEach(loc => renderLocationMarker(loc));
     }
@@ -1464,13 +1465,13 @@
     }
 
     function _sameMinute(a, b) {
-      if (!a?.sentAt?.toDate || !b?.sentAt?.toDate) return false;
-      const da = a.sentAt.toDate(), dateB = b.sentAt.toDate(); // ※ 'db' 는 Firestore 전역변수와 충돌하므로 dateB 사용
-      return da.getFullYear() === dateB.getFullYear() &&
-             da.getMonth()    === dateB.getMonth()    &&
-             da.getDate()     === dateB.getDate()     &&
-             da.getHours()    === dateB.getHours()    &&
-             da.getMinutes()  === dateB.getMinutes();
+      if (!a?.sentAt || !b?.sentAt) return false;
+      const da = _toDate(a.sentAt), db2 = _toDate(b.sentAt);
+      return da.getFullYear() === db2.getFullYear() &&
+             da.getMonth()    === db2.getMonth()    &&
+             da.getDate()     === db2.getDate()     &&
+             da.getHours()    === db2.getHours()    &&
+             da.getMinutes()  === db2.getMinutes();
     }
 
     function _chatDateStr(date) {
@@ -2045,12 +2046,15 @@
       if (document.activeElement) document.activeElement.blur();
       document.getElementById('send-overlay').style.display = 'none';
       document.getElementById('send-modal').style.display = 'none';
-      // iOS 키보드 내려간 후 viewport 위치 초기화
-      requestAnimationFrame(() => {
-        window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-      });
+      // 선물 선택 초기화
+      _selectedGiftItem = null;
+      const giftBtn = document.getElementById('gift-btn');
+      if (giftBtn) { giftBtn.disabled = true; giftBtn.style.opacity = '0.5'; }
+      // iOS 키보드 닫힘 후 viewport 복구 (여러 타이밍 재시도)
+      const _r = () => { window.scrollTo(0,0); document.documentElement.scrollTop=0; document.body.scrollTop=0; };
+      requestAnimationFrame(_r);
+      setTimeout(_r, 150);
+      setTimeout(() => { _r(); map && map.invalidateSize(); }, 400);
     }
 
     function onSendNicknameInput() {
@@ -2066,6 +2070,36 @@
       statusEl.style.color = '#94a3b8';
       statusEl.textContent = '확인 중...';
       _sendNicknameTimer = setTimeout(async () => {
+        try {
+          const snap = await db.collection('participants').doc(val).get();
+          if (snap.exists) {
+            statusEl.style.color = '#15803d';
+            statusEl.textContent = `✅ ${val} — ⭐ ${snap.data().points || 0}점 보유`;
+          } else {
+            statusEl.style.color = '#dc2626';
+            statusEl.textContent = '❌ 존재하지 않는 닉네임이에요';
+          }
+        } catch(e) {
+          statusEl.style.color = '#dc2626';
+          statusEl.textContent = '오류가 발생했어요';
+        }
+      }, 500);
+    }
+
+    let _giftNicknameTimer = null;
+    function onGiftNicknameInput() {
+      clearTimeout(_giftNicknameTimer);
+      const val = document.getElementById('gift-to').value.trim();
+      const statusEl = document.getElementById('gift-to-status');
+      if (!val) { statusEl.textContent = ''; return; }
+      if (val === nickname) {
+        statusEl.style.color = '#dc2626';
+        statusEl.textContent = '❌ 자기 자신에게는 선물할 수 없어요';
+        return;
+      }
+      statusEl.style.color = '#94a3b8';
+      statusEl.textContent = '확인 중...';
+      _giftNicknameTimer = setTimeout(async () => {
         try {
           const snap = await db.collection('participants').doc(val).get();
           if (snap.exists) {
