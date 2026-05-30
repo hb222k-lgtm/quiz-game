@@ -1839,6 +1839,7 @@ async function saveLocation() {
 
   if (!name) { showToast('장소 이름을 입력해주세요'); return; }
   if (isNaN(lat) || isNaN(lng)) { showToast('지도를 클릭해 위치를 선택해주세요'); return; }
+  if (pts < 1) { showToast('퀴즈 점수는 1점 이상이어야 해요'); return; }
 
   let data;
   if (mode === 'pool') {
@@ -2139,8 +2140,9 @@ function showQRImage(id) {
     document.getElementById('qr-team-bonus').value = qr.teamBonusPoints || 200;
   }
   document.getElementById('qr-hint').value = qr.hint || '';
-  document.getElementById('qr-start-at').value = qr.startAt || '';
-  document.getElementById('qr-end-at').value   = qr.endAt   || '';
+  // datetime-local은 "YYYY-MM-DDTHH:MM" 형식(16자)만 허용
+  document.getElementById('qr-start-at').value = (qr.startAt || '').slice(0, 16);
+  document.getElementById('qr-end-at').value   = (qr.endAt   || '').slice(0, 16);
 
   setTimeout(() => {
     document.getElementById('qr-gen-result').style.display = 'block';
@@ -2157,6 +2159,8 @@ function showQRImage(id) {
 async function deleteQRCode(id) {
   if (!confirm('이 QR 코드를 삭제할까요?')) return;
   await db.collection('qrcodes').doc(id).delete();
+  // 퀴즈 배정 통계도 함께 삭제 (孤兒 데이터 방지)
+  db.collection('qr_quiz_assignments').doc(id).delete().catch(() => {});
   showToast('QR 코드가 삭제됐어요');
 }
 
@@ -2198,6 +2202,12 @@ function exportResultsCSV() {
 // ── 설정 ─────────────────────────────────────────
 async function deleteParticipantById(nick) {
   if (!confirm(`"${nick}" 참가자를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  // deviceId 해제 먼저 (기기 잠금 해제) → 그다음 문서 삭제
+  const pSnap = await db.collection('participants').doc(nick).get();
+  const devId = pSnap.data()?.deviceId;
+  if (devId) {
+    db.collection('devices').doc(devId).delete().catch(() => {});
+  }
   await db.collection('participants').doc(nick).delete();
   showToast(`${nick} 삭제됐어요`);
 }
@@ -2401,12 +2411,14 @@ async function saveShopItem() {
   const emoji = document.getElementById('item-emoji').value.trim() || '🎁';
   const name  = document.getElementById('item-name').value.trim();
   const desc  = document.getElementById('item-desc').value.trim();
-  const price = parseInt(document.getElementById('item-price').value) || 100;
+  const priceRaw = parseInt(document.getElementById('item-price').value);
+  const price = isNaN(priceRaw) ? 100 : priceRaw;
   const stockRaw = parseInt(document.getElementById('item-stock').value);
-  const stock = isNaN(stockRaw) ? -1 : stockRaw;  // NaN이면 무제한(-1)으로 처리
+  const stock = isNaN(stockRaw) ? -1 : Math.max(-1, stockRaw);  // -1 미만은 -1(무제한)으로 정규화
   const editId = document.getElementById('item-edit-id').value;
 
   if (!name) { showToast('상품명을 입력해주세요'); return; }
+  if (price < 0) { showToast('가격은 0점 이상이어야 해요'); return; }
 
   const data = { emoji, name, description: desc, price, stock, enabled: true };
   try {
@@ -2714,6 +2726,7 @@ async function addMilestone() {
   const t = parseInt(document.getElementById('ms-threshold').value);
   const b = parseInt(document.getElementById('ms-bonus').value);
   if (!t || !b) { showToast('달성 점수와 보너스 점수를 입력해주세요'); return; }
+  if (_milestones.some(m => m.threshold === t)) { showToast(`${t}점 구간이 이미 있어요`); return; }
   const newList = [..._milestones, { threshold: t, bonus: b }]
     .sort((a, b) => a.threshold - b.threshold);
   await db.collection('config').doc('bonusMilestones').set({ milestones: newList });

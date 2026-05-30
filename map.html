@@ -1012,6 +1012,12 @@
       }
     }
 
+    // sentAt 이 Firestore Timestamp 또는 ISO 문자열 모두 허용
+    function _toDate(v) {
+      if (!v) return new Date(0);
+      return v?.toDate ? v.toDate() : new Date(v);
+    }
+
     function listenAnnouncements() {
       const since = new Date();
       // orderBy 없이 단일 문서 감시 → 인덱스 불필요, 즉각 수신
@@ -1021,7 +1027,7 @@
           const a = snap.data();
           if (!a.sentAt || !a.uid) return;
           if (a.uid === _lastAnnounceUid) return;          // 페이지 열기 전에 보낸 공지는 접속 시 별도 처리
-          if (a.sentAt.toDate() < since) return;
+          if (_toDate(a.sentAt) < since) return;
           _lastAnnounceUid = a.uid;
           showAnnouncePopup(a);
         }, err => console.warn('공지 수신 오류:', err));
@@ -1045,7 +1051,7 @@
       const ICON = { info:'📋', mission:'🎯', urgent:'🚨' };
       const bg   = BG[a.type]  || '#3b82f6';
       const icon = ICON[a.type] || '📢';
-      const time = timeLabel || (a.sentAt ? _timeAgo(a.sentAt.toDate()) : '');
+      const time = timeLabel || (a.sentAt ? _timeAgo(_toDate(a.sentAt)) : '');
 
       // 진동
       if (navigator.vibrate)
@@ -1090,7 +1096,7 @@
         if (!snap.exists) return;
         const a = snap.data();
         if (!a.sentAt || !a.uid) return;
-        const sentDate = a.sentAt.toDate();
+        const sentDate = _toDate(a.sentAt);
         if ((Date.now() - sentDate.getTime()) > 30 * 60000) return;
 
         const readKey = 'read_announce_' + a.uid;
@@ -1604,7 +1610,7 @@
             취소
           </button>
         </div>`;
-      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); window._teamChangeResolve?.(false); } });
       document.body.appendChild(modal);
 
       // 팀별 인원 수 로드
@@ -1635,7 +1641,7 @@
     async function changeMyTeam(newTeamId) {
       const modal = document.getElementById('team-change-modal');
       if (modal) modal.remove();
-      if (!participant?.nickname) return;
+      if (!nickname) return;
       const myTeam = participant?.team;
       if (newTeamId === myTeam) { showToast('이미 해당 팀이에요'); return; }
 
@@ -1666,7 +1672,7 @@
       if (!warned) return;
 
       try {
-        await db.collection('participants').doc(participant.nickname).update({ team: newTeamId });
+        await db.collection('participants').doc(nickname).update({ team: newTeamId });
         // 로컬 participant 업데이트
         participant.team = newTeamId;
         // 헤더 배지 업데이트
@@ -2008,6 +2014,9 @@
           sentAt: firebase.firestore.FieldValue.serverTimestamp(),
         }).catch(() => {});
 
+        // 메모리 상 포인트 즉시 감소 (onSnapshot 도착 전 UI 일관성 유지)
+        if (participant) participant.points = Math.max(0, (participant.points || 0) - amount);
+        document.getElementById('header-points').textContent = participant?.points || 0;
         closeSendPoints();
         showToast(`✅ ${toNick}님에게 ${amount}점을 보냈어요!`);
       } catch(e) {
@@ -2048,7 +2057,7 @@
         const cantAfford = myPts < item.price;
         const selected = _selectedGiftItem && _selectedGiftItem.id === item.id;
         const stockTxt = item.stock < 0 ? '무제한' : `${item.stock}개 남음`;
-        return `<div onclick="${cantAfford ? '' : `selectGiftItem('${item.id}')`}" style="
+        return `<div onclick="${cantAfford ? '' : `selectGiftItem('${escHtml(item.id)}')`}" style="
           display:flex; align-items:center; gap:12px; padding:12px 14px;
           border:2px solid ${selected ? '#7c3aed' : (cantAfford ? '#f1f5f9' : '#e2e8f0')};
           border-radius:14px; cursor:${cantAfford ? 'default' : 'pointer'};

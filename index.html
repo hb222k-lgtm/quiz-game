@@ -489,6 +489,7 @@
       const name = input.value.trim();
       if (!name) { showToast('닉네임을 입력해주세요'); return; }
       if (name.length < 2) { showToast('닉네임은 2자 이상이어야 해요'); return; }
+      if (/[\/\\.#$\[\]]/.test(name)) { showToast('닉네임에 /\\.#$[] 문자는 사용할 수 없어요'); return; }
 
       const btn = document.querySelector('#step-nickname .btn-primary');
       btn.textContent = '확인 중...'; btn.disabled = true;

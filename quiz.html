@@ -154,7 +154,7 @@
     if (!nickname) { window.location.href = 'index.html'; }
 
     const params  = new URLSearchParams(location.search);
-    const locId   = params.get('loc');
+    const locId   = (params.get('loc') || '').trim();
     if (!locId) { window.location.href = 'map.html'; }
 
     let locationData = null;
@@ -174,9 +174,10 @@
         }
         locationData = { id: locId, ...locSnap.data() };
 
-        // 공개 날짜 체크
+        // 공개 날짜 체크 (Firestore Timestamp 또는 ISO string 모두 처리)
         if (locationData.startDate) {
-          const openAt = new Date(locationData.startDate);
+          const raw = locationData.startDate;
+          const openAt = raw?.toDate ? raw.toDate() : new Date(raw);
           if (openAt > new Date()) {
             showToast(`${openAt.toLocaleString('ko-KR')}부터 공개되는 장소예요`);
             setTimeout(() => window.location.href='map.html', 2000);
@@ -561,7 +562,8 @@
       window._showAnnouncePopup = function(a, timeLabel) {
         const bg   = BG[a.type]  || '#3b82f6';
         const icon = ICON[a.type] || '📢';
-        const time = timeLabel || (a.sentAt ? timeAgo(a.sentAt.toDate()) : '');
+        const _toDate = v => v?.toDate ? v.toDate() : new Date(v || 0);
+        const time = timeLabel || (a.sentAt ? timeAgo(_toDate(a.sentAt)) : '');
         if (navigator.vibrate)
           navigator.vibrate(a.type === 'urgent' ? [300,100,300,100,300] : [200,100,200]);
         if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted')
@@ -596,7 +598,8 @@
           const a = snap.data();
           if (!a.sentAt || !a.uid) return;
           if (a.uid === lastUid) return;
-          if (a.sentAt.toDate() < since) return;
+          const _toDate2 = v => v?.toDate ? v.toDate() : new Date(v || 0);
+          if (_toDate2(a.sentAt) < since) return;
           lastUid = a.uid;
           window._showAnnouncePopup(a);
         }, err => console.warn('공지 수신 오류:', err));
@@ -608,7 +611,7 @@
           if (!snap.exists) return;
           const a = snap.data();
           if (!a.sentAt || !a.uid) return;
-          const sentDate = a.sentAt.toDate();
+          const sentDate = a.sentAt?.toDate ? a.sentAt.toDate() : new Date(a.sentAt || 0);
           if ((Date.now() - sentDate.getTime()) > 30 * 60000) return;
           const readKey = 'read_announce_' + a.uid;
           if (localStorage.getItem(readKey)) return;
