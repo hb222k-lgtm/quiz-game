@@ -1311,6 +1311,9 @@
 
     function openCommunity(tab = 'players') {
       const panel = document.getElementById('community-panel');
+      // full-page 높이 복원 (closeCommunity에서 px로 고정된 경우 대비)
+      const fp = document.querySelector('.full-page');
+      if (fp) fp.style.height = '';
       panel.style.display = 'flex';
       document.getElementById('chat-badge').style.display = 'none';
       _chatHasNew = false;
@@ -1330,12 +1333,22 @@
       if (_playersUnsubscribe) { _playersUnsubscribe(); _playersUnsubscribe = null; }
       if (_teamsUnsubscribe)   { _teamsUnsubscribe();   _teamsUnsubscribe   = null; }
       // 채팅 리스너는 유지 → 패널 닫힌 동안 새 메시지 배지(!!) 감지
-      // iOS viewport 위치 초기화
-      requestAnimationFrame(() => {
+      // iOS viewport 복구: 키보드 애니메이션(~300ms) 이후 여러 타이밍에 재시도
+      const _resetView = () => {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
-      });
+      };
+      requestAnimationFrame(_resetView);
+      setTimeout(_resetView, 100);
+      setTimeout(_resetView, 300);
+      setTimeout(() => {
+        _resetView();
+        // full-page 높이 강제 재계산 (iOS Safari dvh 지연 대응)
+        const fp = document.querySelector('.full-page');
+        if (fp) { fp.style.height = window.innerHeight + 'px'; }
+        map && map.invalidateSize();   // Leaflet 지도 리사이즈
+      }, 400);
     }
 
     function switchCommunityTab(tab) {
