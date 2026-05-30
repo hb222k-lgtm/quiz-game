@@ -2113,7 +2113,7 @@
           const curPts = pSnap.data()?.points || 0;
           if (curPts < finalPrice) throw new Error('포인트 부족');
           tx.update(pRef, { points: firebase.firestore.FieldValue.increment(-finalPrice) });
-          tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
+          if (stock > 0) tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
         });
         const price = finalPrice;
 

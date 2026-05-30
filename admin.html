@@ -2786,12 +2786,15 @@ async function sendAnnouncement() {
   btn.disabled = true; btn.textContent = '전송 중...';
 
   try {
-    await db.collection('announcements').add({
+    const payload = {
       message,
       type: _announceType,
       title: TITLES[_announceType] || '공지',
       sentAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    await db.collection('announcements').add(payload);
+    // 참가자 map.html 리스너가 감지할 수 있도록 latestAnnouncement 문서도 갱신
+    await db.collection('config').doc('latestAnnouncement').set(payload);
     showToast('공지를 보냈어요! 📢');
     document.getElementById('announce-message').value = '';
     loadRecentAnnouncements();
