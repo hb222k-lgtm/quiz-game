@@ -241,7 +241,9 @@
 
         const label = document.getElementById('team-shop-label');
         if (myTeamData) {
-          label.innerHTML = `<span style="color:${myTeamData.color||'#7c3aed'}; font-size:18px;">${myTeamData.emoji||'🏆'}</span> ${escHtml(myTeamData.name)} 팀 전용 상점`;
+          label.innerHTML = `<span style="color:${myTeamData.color||'#7c3aed'}; font-size:18px;">${myTeamData.emoji||'🏆'}</span> ${escHtml(myTeamData.name)} 팀 상점`;
+        } else {
+          label.innerHTML = '🏷️ 팀 상점';
         }
 
         addBtn.style.display = 'none';
@@ -263,7 +265,6 @@
       if (_teamItemsUnsubscribe) { _teamItemsUnsubscribe(); _teamItemsUnsubscribe = null; }
       if (!myTeamId) return;
       _teamItemsUnsubscribe = db.collection('team_shop_items')
-        .where('teamId', '==', myTeamId)
         .onSnapshot(snap => {
           teamItemsData = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .filter(i => i.enabled !== false);
