@@ -2353,7 +2353,7 @@ async function resetAll() {
   for (let i = 0; i < pSnap.docs.length; i += chunkSize) {
     const batch = db.batch();
     pSnap.docs.slice(i, i + chunkSize).forEach(d => {
-      batch.update(d.ref, { points: 0, earnedPoints: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {}, badges: [], claimedMilestones: [] });
+      batch.update(d.ref, { points: 0, earnedPoints: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {}, badges: [], claimedMilestones: [], activeQuiz: firebase.firestore.FieldValue.delete() });
     });
     await batch.commit();
   }

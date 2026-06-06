@@ -181,12 +181,20 @@
         }
         locationData = { id: locId, ...locSnap.data() };
 
-        // 공개 날짜 체크 (Firestore Timestamp 또는 ISO string 모두 처리)
+        // 공개·종료 날짜 체크 (Firestore Timestamp 또는 ISO string 모두 처리)
+        const toDate = v => v?.toDate ? v.toDate() : new Date(v);
         if (locationData.startDate) {
-          const raw = locationData.startDate;
-          const openAt = raw?.toDate ? raw.toDate() : new Date(raw);
+          const openAt = toDate(locationData.startDate);
           if (openAt > new Date()) {
             showToast(`${openAt.toLocaleString('ko-KR')}부터 공개되는 장소예요`);
+            setTimeout(() => window.location.href='map.html', 2000);
+            return;
+          }
+        }
+        if (locationData.endDate) {
+          const closeAt = toDate(locationData.endDate);
+          if (closeAt < new Date()) {
+            showToast('이미 종료된 장소예요');
             setTimeout(() => window.location.href='map.html', 2000);
             return;
           }

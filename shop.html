@@ -425,7 +425,7 @@
         .onSnapshot(snap => {
           myOrders = snap.docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .sort((a, b) => (b.purchasedAt || '') < (a.purchasedAt || '') ? 1 : -1); // 최신순
+            .sort((a, b) => (a.purchasedAt || '') < (b.purchasedAt || '') ? 1 : -1); // 최신순
           renderHistory();
           renderItems(); // 구매완료 버튼 상태 갱신
         });

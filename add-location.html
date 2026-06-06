@@ -756,11 +756,11 @@
 
   // ── 패널 접기/펴기 ─────────────────────────────
   let _panelCollapsed = false;
-  function togglePanel(collapse) {
+  function togglePanel(forceOpen) {
     const panel = document.getElementById('bottom-panel');
     const label = document.getElementById('handle-label');
-    if (typeof collapse === 'boolean') _panelCollapsed = !collapse;
-    _panelCollapsed = !_panelCollapsed;
+    // forceOpen=true → 강제로 열기, 인수 없으면 토글
+    _panelCollapsed = forceOpen === true ? false : !_panelCollapsed;
     panel.classList.toggle('collapsed', _panelCollapsed);
     label.textContent = _panelCollapsed ? '▲ 폼 열기' : '▼ 지도 크게 보기';
     setTimeout(() => { if (map) map.invalidateSize(); }, 320);
@@ -996,7 +996,7 @@
       saveBtn.classList.add('batch-mode');
       updateBatchSaveBtn();
       // 패널이 닫혀있으면 자동으로 열기
-      if (_panelCollapsed) togglePanel();
+      if (_panelCollapsed) togglePanel(true);
     } else {
       btn.classList.remove('active');
       btn.textContent = '📌 일괄 추가';
