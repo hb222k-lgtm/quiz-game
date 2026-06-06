@@ -102,8 +102,32 @@
       background: #fff;
       border-top: 1px solid #e2e8f0;
       display: flex; flex-direction: column;
-      max-height: 55vh;
+      max-height: 48vh;
+      transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
     }
+    .panel.collapsed { max-height: 44px; }
+
+    /* 패널 핸들 */
+    .panel-handle {
+      flex-shrink: 0;
+      height: 44px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      background: #fff;
+    }
+    .handle-bar {
+      width: 36px; height: 4px;
+      background: #e2e8f0; border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .handle-label {
+      font-size: 12px; color: #94a3b8; font-weight: 600;
+    }
+    .panel.collapsed .handle-bar { background: #c4b5fd; }
+    .panel.collapsed .handle-label { color: #7c3aed; }
 
     /* 패널 헤더 (탭 토글) */
     .panel-header {
@@ -272,7 +296,12 @@
 </div>
 
 <!-- 하단 패널 -->
-<div class="panel">
+<div class="panel" id="bottom-panel">
+  <!-- 드래그 핸들 -->
+  <div class="panel-handle" id="panel-handle" onclick="togglePanel()">
+    <div class="handle-bar"></div>
+    <span class="handle-label" id="handle-label">▼ 지도 크게 보기</span>
+  </div>
   <!-- 탭 헤더 -->
   <div class="panel-header">
     <button class="panel-tab active" id="tab-form-btn" onclick="switchTab('form')">✏️ 장소 정보</button>
@@ -725,6 +754,36 @@
     if (map) map.invalidateSize();
   }
 
+  // ── 패널 접기/펴기 ─────────────────────────────
+  let _panelCollapsed = false;
+  function togglePanel(collapse) {
+    const panel = document.getElementById('bottom-panel');
+    const label = document.getElementById('handle-label');
+    if (typeof collapse === 'boolean') _panelCollapsed = !collapse;
+    _panelCollapsed = !_panelCollapsed;
+    panel.classList.toggle('collapsed', _panelCollapsed);
+    label.textContent = _panelCollapsed ? '▲ 폼 열기' : '▼ 지도 크게 보기';
+    setTimeout(() => { if (map) map.invalidateSize(); }, 320);
+  }
+
+  // 터치 스와이프로 패널 열기/닫기
+  (function() {
+    let startY = 0, startCollapsed = false;
+    const handle = document.getElementById('panel-handle');
+    handle.addEventListener('touchstart', e => {
+      startY = e.touches[0].clientY;
+      startCollapsed = _panelCollapsed;
+    }, { passive: true });
+    handle.addEventListener('touchend', e => {
+      const dy = e.changedTouches[0].clientY - startY;
+      if (Math.abs(dy) > 30) {
+        // 위로 스와이프 → 열기, 아래로 → 닫기
+        const shouldCollapse = dy > 0;
+        if (shouldCollapse !== _panelCollapsed) togglePanel();
+      }
+    }, { passive: true });
+  })();
+
   // ── 장소 검색 (Nominatim) ────────────────────────
   let _searchTimer = null;
 
@@ -936,6 +995,8 @@
       panelHeader.style.display = 'none';
       saveBtn.classList.add('batch-mode');
       updateBatchSaveBtn();
+      // 패널이 닫혀있으면 자동으로 열기
+      if (_panelCollapsed) togglePanel();
     } else {
       btn.classList.remove('active');
       btn.textContent = '📌 일괄 추가';
