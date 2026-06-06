@@ -586,7 +586,6 @@
               : null;
             if (!existingTeam) {
               _pendingTeamName = name;
-              _pendingTeamIsNew = !_isExistingUser;
               await showTeamStep(activeTeams);
               btn.textContent = '입장 🚀'; btn.disabled = false;
               return;
@@ -604,7 +603,6 @@
 
     // ── 팀 선택 로직 ─────────────────────────────
     let _pendingTeamName = null;
-    let _pendingTeamIsNew = false;
     let _selectedTeamId = null;
     let _teamMemberCounts = {};
 

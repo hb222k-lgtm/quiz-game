@@ -1243,9 +1243,9 @@
       });
       startGPS();
       startCompass();
-      // loadLocations 먼저 완료 후 listenParticipant → 진행도 "N/0곳" 표시 방지
-      loadLocations().then(() => listenParticipant());
-      loadMilestones();
+      // loadLocations + loadMilestones 둘 다 완료 후 listenParticipant 시작
+      // → 진행도 "N/0곳" 표시 방지 + 보너스 구간 초기 체크 경쟁 조건 방지
+      Promise.all([loadLocations(), loadMilestones()]).then(() => listenParticipant());
       startRankListener();   // 순위 변동 알림
       loadTeamConfig();      // 팀 배지 + 팀 설정 프리로드
       requestNotifPermission();

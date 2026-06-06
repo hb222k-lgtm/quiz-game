@@ -334,7 +334,10 @@
       document.getElementById('tbm-members').textContent = `${teamMemberCount}명`;
       document.getElementById('tbm-per').textContent     = `⭐ ${perCost}점`;
       document.getElementById('tbm-mypts').textContent   = myPoints;
-      document.getElementById('tbm-after').textContent   = myPoints - perCost;
+      const afterPts = myPoints - perCost;
+      const afterEl = document.getElementById('tbm-after');
+      afterEl.textContent = afterPts < 0 ? '포인트 부족' : afterPts;
+      afterEl.style.color = afterPts < 0 ? '#ef4444' : '';
 
       const confirmBtn = document.getElementById('tbm-confirm-btn');
       if (myPoints < perCost) {
