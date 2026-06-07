@@ -289,9 +289,26 @@
     </button>
 
     <!-- 거부 안내 -->
-    <p style="color:rgba(196,181,253,0.5); font-size:12px; line-height:1.6; max-width:260px;">
-      허용 안 하면 장소 감지가 되지 않아요.<br>걱정 마세요, 언제든 다시 허용할 수 있어요 😊
+    <p id="gps-pre-hint" style="color:rgba(196,181,253,0.55); font-size:12px; line-height:1.8; max-width:280px; margin-top:4px;">
+      팝업이 뜨면 <b style="color:rgba(196,181,253,0.85);">허용</b>을 눌러주세요 😊<br>
+      실수로 거부했다면 설정 앱에서 다시 켤 수 있어요
     </p>
+
+    <script>
+      // 사전 안내 화면에 iOS/Android 힌트 표시
+      (function() {
+        const ua = navigator.userAgent;
+        const el = document.getElementById('gps-pre-hint');
+        if (!el) return;
+        if (/iphone|ipad|ipod/i.test(ua)) {
+          el.innerHTML = '팝업이 뜨면 <b style="color:rgba(196,181,253,0.85);">허용</b>을 눌러주세요 😊<br>' +
+            '거부했다면: 설정 → Safari(또는 Chrome) → 위치 → <b style="color:rgba(196,181,253,0.85);">앱 사용 중에만</b>';
+        } else if (/android/i.test(ua)) {
+          el.innerHTML = '팝업이 뜨면 <b style="color:rgba(196,181,253,0.85);">허용</b>을 눌러주세요 😊<br>' +
+            '거부했다면: 주소창 🔒 탭 → 권한 → 위치 → <b style="color:rgba(196,181,253,0.85);">허용</b>';
+        }
+      })();
+    </script>
   </div>
 
   <style>
@@ -843,36 +860,38 @@
 
       // ── iOS ──────────────────────────────────────
       if (isIOS) {
-        // Chrome on iOS
+        // Chrome on iOS (CriOS)
         if (/CriOS/i.test(ua))
-          return '📱 <b>iPhone 설정 앱</b>에서 변경<br>' +
-                 '① 설정 → 아래로 스크롤 → <b>Chrome</b><br>' +
-                 '② <b>위치</b> → <b>앱 사용 중 허용</b>';
-        // Safari on iOS (기본)
-        return '📱 <b>iPhone 설정 앱</b>에서 변경<br>' +
-               '① 설정 → <b>개인 정보 보호 및 보안</b><br>' +
-               '② <b>위치 서비스</b> → <b>Safari 웹사이트</b><br>' +
-               '③ <b>앱 사용 중 허용</b> 선택';
+          return '📱 <b>iPhone 설정 앱</b>으로 이동<br>' +
+                 '① 설정 앱 열기<br>' +
+                 '② 아래로 스크롤 → <b>Chrome</b> 탭<br>' +
+                 '③ <b>위치</b> → <b>앱 사용 중에만</b> 선택';
+        // Safari on iOS
+        return '📱 <b>iPhone 설정 앱</b>으로 이동<br>' +
+               '① 설정 앱 열기<br>' +
+               '② 아래로 스크롤 → <b>Safari</b> 탭<br>' +
+               '③ <b>위치</b> → <b>앱 사용 중에만</b> 선택';
       }
 
       // ── Android ──────────────────────────────────
       if (isAndroid) {
         // 삼성 인터넷
         if (/SamsungBrowser/i.test(ua))
-          return '🔒 <b>주소창 자물쇠 아이콘</b> 탭<br>' +
-                 '① 🔒 아이콘 → <b>권한</b> → <b>위치</b><br>' +
-                 '② <b>허용</b> 선택<br>' +
-                 '<span style="opacity:.75">안 되면: 설정 앱 → 앱 → 삼성 인터넷 → 권한 → 위치</span>';
+          return '🔒 <b>주소창 왼쪽 자물쇠</b> 아이콘 탭<br>' +
+                 '① 🔒 → <b>권한</b> → <b>위치</b> → <b>허용</b><br>' +
+                 '<span style="opacity:.8">위 방법이 안 되면:</span><br>' +
+                 '설정 → 앱 → <b>삼성 인터넷</b> → 권한 → 위치';
         // 네이버 웨일
         if (/Whale/i.test(ua))
-          return '🔒 <b>주소창 자물쇠 아이콘</b> 탭<br>' +
-                 '① 🔒 아이콘 → <b>위치</b> → <b>허용</b><br>' +
-                 '<span style="opacity:.75">안 되면: 설정 앱 → 앱 → Whale → 권한 → 위치</span>';
-        // Chrome on Android (기본)
-        return '🔒 <b>주소창 자물쇠 아이콘</b> 탭<br>' +
-               '① 주소창 왼쪽 🔒 아이콘 탭<br>' +
-               '② <b>권한</b> → <b>위치</b> → <b>허용</b><br>' +
-               '<span style="opacity:.75">안 되면: 설정 앱 → 앱 → Chrome → 권한 → 위치</span>';
+          return '🔒 <b>주소창 왼쪽 자물쇠</b> 아이콘 탭<br>' +
+                 '① 🔒 → <b>위치</b> → <b>허용</b><br>' +
+                 '<span style="opacity:.8">위 방법이 안 되면:</span><br>' +
+                 '설정 → 앱 → <b>Whale</b> → 권한 → 위치';
+        // Chrome on Android
+        return '🔒 <b>주소창 왼쪽 자물쇠</b> 아이콘 탭<br>' +
+               '① 🔒 → <b>권한</b> → <b>위치</b> → <b>허용</b><br>' +
+               '<span style="opacity:.8">위 방법이 안 되면:</span><br>' +
+               '설정 → 앱 → <b>Chrome</b> → 권한 → 위치';
       }
 
       // ── 기타 ─────────────────────────────────────
