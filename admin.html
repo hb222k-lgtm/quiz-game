@@ -222,8 +222,8 @@
         <div id="tb-tie-groups" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
         <div style="display:flex; gap:8px; margin-bottom:8px;">
           <input type="text" id="tb-contestants" placeholder="닉네임을 쉼표로 구분 (예: 철수, 영희, 민수)"
-            style="flex:1; padding:9px 11px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; outline:none;">
-          <button class="btn btn-outline" style="font-size:12px; white-space:nowrap;" onclick="tbDetectTies()">동점 감지</button>
+            style="flex:1; min-width:0; padding:9px 11px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; outline:none;">
+          <button class="btn btn-outline" style="width:auto; flex-shrink:0; font-size:12px; white-space:nowrap; padding:9px 14px;" onclick="tbDetectTies()">동점 감지</button>
         </div>
         <button class="btn btn-primary" style="width:100%;" id="tb-start-btn" onclick="startTiebreaker()">⚔️ 결승전 시작</button>
         <div id="tb-admin-status" style="display:none; margin-top:12px;"></div>
