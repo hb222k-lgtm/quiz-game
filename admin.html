@@ -210,6 +210,25 @@
         <button class="btn btn-outline" style="flex:1; font-size:13px;" onclick="exportResultsCSV()">📥 결과 CSV 내보내기</button>
         <button class="btn btn-outline" style="flex:1; font-size:13px;" onclick="window.open('qr-print.html','_blank')">🖨️ QR 일괄 인쇄</button>
       </div>
+
+      <!-- ⚔️ 동점 결승전 -->
+      <div class="card" style="margin-bottom:12px;">
+        <h3 style="font-weight:700; margin-bottom:4px;">⚔️ 동점 결승전</h3>
+        <p style="font-size:12px; color:#94a3b8; margin-bottom:10px; line-height:1.6;">
+          동점자 전원에게 같은 랜덤 문제가 출제돼요. <b>먼저 틀린 사람부터 탈락</b>하며 순위가 뒤로 밀리고,
+          맞힌 사람들은 다음 문제로 계속! 마지막 1명이 남으면 탈락 역순으로 순위가 자동 확정돼요.
+          <span style="color:#7c3aed;">참가자들은 지도 화면에 있어야 문제가 보여요.</span>
+        </p>
+        <div id="tb-tie-groups" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;"></div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="tb-contestants" placeholder="닉네임을 쉼표로 구분 (예: 철수, 영희, 민수)"
+            style="flex:1; padding:9px 11px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; outline:none;">
+          <button class="btn btn-outline" style="font-size:12px; white-space:nowrap;" onclick="tbDetectTies()">동점 감지</button>
+        </div>
+        <button class="btn btn-primary" style="width:100%;" id="tb-start-btn" onclick="startTiebreaker()">⚔️ 결승전 시작</button>
+        <div id="tb-admin-status" style="display:none; margin-top:12px;"></div>
+      </div>
+
       <div id="leaderboard-list"></div>
     </div>
 
@@ -1442,6 +1461,174 @@ function initAdmin() {
   listenQRCodes();
   listenShopItems();
   listenTeamShopItems();
+  listenTiebreakerAdmin();
+}
+
+// ── ⚔️ 동점 결승전 관리 ────────────────────────
+let _tbData = null;
+let _tbAutoAdvanceTimer = null;
+
+// 완전 동점 그룹 감지 (포인트·완료 장소·QR 수 모두 동일, 2명 이상)
+function tbDetectTies() {
+  const key = p => `${p.points || 0}|${(p.completedLocations || []).length}|${(p.scannedQRs || []).length}`;
+  const groups = {};
+  participantsData.forEach(p => { const k = key(p); (groups[k] = groups[k] || []).push(p); });
+  const tied = Object.values(groups).filter(g => g.length >= 2)
+    .sort((a, b) => (b[0].points || 0) - (a[0].points || 0));
+  const box = document.getElementById('tb-tie-groups');
+  if (!tied.length) {
+    box.innerHTML = '<span style="font-size:12px;color:#94a3b8;">현재 완전 동점 그룹이 없어요 ✅</span>';
+    return;
+  }
+  box.innerHTML = tied.slice(0, 6).map(g => {
+    const names = g.map(p => p.nickname || p.id).join(', ');
+    return `<button data-names="${escHtml(names)}"
+      onclick="document.getElementById('tb-contestants').value = this.dataset.names"
+      style="font-size:12px; padding:5px 10px; background:#fef9c3; border:1.5px solid #fde047;
+             border-radius:99px; cursor:pointer; font-weight:700; font-family:inherit;">
+      ⭐${g[0].points || 0}점 동점 ${g.length}명: ${escHtml(names)}</button>`;
+  }).join('');
+}
+
+function _tbPickQuestion(usedIds) {
+  const enabled = quizBankData.filter(q => q.enabled !== false);
+  const fresh = enabled.filter(q => !(usedIds || []).includes(q.id));
+  const pool = fresh.length ? fresh : enabled; // 다 쓰면 재사용
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+async function startTiebreaker() {
+  const raw = document.getElementById('tb-contestants').value.trim();
+  const names = [...new Set(raw.split(',').map(s => s.trim()).filter(Boolean))];
+  if (names.length < 2) { showToast('참가자를 2명 이상 입력해주세요'); return; }
+  const missing = names.filter(n => !participantsData.some(p => (p.nickname || p.id) === n));
+  if (missing.length) { showToast(`없는 닉네임: ${missing.join(', ')}`); return; }
+  const q = _tbPickQuestion([]);
+  if (!q) { showToast('문제 은행에 활성 문제가 없어요. 먼저 추가해주세요.'); return; }
+
+  await db.collection('config').doc('tiebreaker').set({
+    active: true,
+    contestants: names,
+    eliminated: [],           // 탈락 순서대로 쌓임 [{id, round, at}]
+    answeredBy: [],           // 이번 라운드 정답자
+    round: 1,
+    question: q.question, options: q.options, correctIndex: q.correctIndex,
+    usedQuestionIds: [q.id],
+    applied: false,
+    startedAt: new Date().toISOString(),
+  });
+  showToast(`⚔️ 결승전 시작! (${names.length}명)`);
+}
+
+async function tbNextQuestion() {
+  const snap = await db.collection('config').doc('tiebreaker').get();
+  const d = snap.data();
+  if (!d?.active) return;
+  const q = _tbPickQuestion(d.usedQuestionIds);
+  if (!q) { showToast('출제할 문제가 없어요'); return; }
+  await db.collection('config').doc('tiebreaker').update({
+    round: d.round + 1,
+    answeredBy: [],
+    question: q.question, options: q.options, correctIndex: q.correctIndex,
+    usedQuestionIds: firebase.firestore.FieldValue.arrayUnion(q.id),
+  });
+}
+
+async function tbEnd() {
+  if (!confirm('결승전을 종료할까요?\n(1명 남기 전에 종료하면 순위는 반영되지 않아요)')) return;
+  clearTimeout(_tbAutoAdvanceTimer);
+  await db.collection('config').doc('tiebreaker').update({ active: false });
+  showToast('결승전이 종료됐어요');
+}
+
+// 결과 반영: [생존자, 늦게 탈락한 순...] → tbOrder 1, 2, 3…
+async function tbApplyResult(d) {
+  const elimIds = (d.eliminated || []).map(e => e.id);
+  const alive = (d.contestants || []).filter(n => !elimIds.includes(n));
+  const placement = [...alive, ...[...elimIds].reverse()];
+  const batch = db.batch();
+  placement.forEach((n, i) =>
+    batch.update(db.collection('participants').doc(n), { tbOrder: i + 1 }));
+  batch.update(db.collection('config').doc('tiebreaker'), { applied: true, active: false });
+  await batch.commit();
+  showToast(`🏆 결승전 결과 반영! 1위: ${placement[0]}`);
+}
+
+function listenTiebreakerAdmin() {
+  db.collection('config').doc('tiebreaker').onSnapshot(snap => {
+    _tbData = snap.data() || null;
+    renderTiebreakerAdmin();
+
+    const d = _tbData;
+    if (!d?.active) { clearTimeout(_tbAutoAdvanceTimer); return; }
+
+    const elimIds = (d.eliminated || []).map(e => e.id);
+    const alive = (d.contestants || []).filter(n => !elimIds.includes(n));
+
+    // 1명 남음 → 자동으로 순위 확정
+    if (alive.length <= 1 && !d.applied) {
+      clearTimeout(_tbAutoAdvanceTimer);
+      tbApplyResult(d).catch(e => console.warn('결과 반영 오류:', e));
+      return;
+    }
+    // 생존자 전원 정답 → 1.5초 후 자동 다음 문제
+    clearTimeout(_tbAutoAdvanceTimer);
+    if (alive.length >= 2 && alive.every(n => (d.answeredBy || []).includes(n))) {
+      _tbAutoAdvanceTimer = setTimeout(() => tbNextQuestion().catch(() => {}), 1500);
+    }
+  });
+}
+
+function renderTiebreakerAdmin() {
+  const box = document.getElementById('tb-admin-status');
+  const startBtn = document.getElementById('tb-start-btn');
+  if (!box || !startBtn) return;
+  const d = _tbData;
+
+  if (!d || (!d.active && !d.applied)) {
+    box.style.display = 'none';
+    startBtn.style.display = 'block';
+    return;
+  }
+  box.style.display = 'block';
+
+  const elimIds = (d.eliminated || []).map(e => e.id);
+  const alive = (d.contestants || []).filter(n => !elimIds.includes(n));
+
+  // 종료 + 반영 완료 → 최종 순위표
+  if (!d.active && d.applied) {
+    const placement = [...alive, ...[...elimIds].reverse()];
+    box.innerHTML = `
+      <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:12px; padding:12px; font-size:13px; line-height:2;">
+        🏁 <b>결승전 종료 — 순위 반영 완료</b><br>
+        ${placement.map((n, i) => `${['🥇','🥈','🥉'][i] || `<b>${i+1}위</b>`} ${escHtml(n)}`).join('<br>')}
+      </div>`;
+    startBtn.style.display = 'block';
+    return;
+  }
+
+  // 진행 중
+  startBtn.style.display = 'none';
+  box.innerHTML = `
+    <div style="background:#faf5ff; border:1.5px solid #c4b5fd; border-radius:12px; padding:12px; font-size:13px;">
+      <div style="font-weight:800; margin-bottom:6px;">⚔️ ${d.round}라운드 진행 중</div>
+      <div style="background:#fff; border-radius:8px; padding:8px 10px; margin-bottom:8px; line-height:1.6;">
+        ❓ ${escHtml(d.question)}<br>
+        <span style="color:#15803d; font-weight:700;">정답: ${escHtml((d.options || [])[d.correctIndex] || '')}</span>
+      </div>
+      <div style="margin-bottom:4px; line-height:1.9;">생존 ${alive.length}명:
+        ${alive.map(n => {
+          const ok = (d.answeredBy || []).includes(n);
+          return `<span style="font-weight:700; color:${ok ? '#15803d' : '#64748b'};">${ok ? '✅' : '⏳'}${escHtml(n)}</span>`;
+        }).join(' · ')}
+      </div>
+      ${elimIds.length ? `<div style="color:#dc2626; line-height:1.9;">탈락(순서대로): ${elimIds.map(n => escHtml(n)).join(' → ')}</div>` : ''}
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn btn-outline btn-sm" style="flex:1;" onclick="tbNextQuestion()">⏭ 문제 건너뛰기</button>
+        <button class="btn btn-danger btn-sm" style="flex:1;" onclick="tbEnd()">종료</button>
+      </div>
+    </div>`;
 }
 
 function injectAnnounceCard() {
@@ -1475,17 +1662,12 @@ function injectAnnounceCard() {
 // ── 리더보드 실시간 ───────────────────────────────
 let _leaderboardTimer = null;
 // ── 동점 방지 순위 비교 ──────────────────────────
-// 포인트 → 완료 장소 수 → QR 스캔 수 → 먼저 가입한 순 → 닉네임순
-function _joinedMs(v) {
-  if (!v) return Number.MAX_SAFE_INTEGER;
-  const t = v.toDate ? v.toDate().getTime() : new Date(v).getTime();
-  return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
-}
+// 포인트 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
 function rankCompare(a, b) {
   return (b.points || 0) - (a.points || 0)
     || ((b.completedLocations || []).length) - ((a.completedLocations || []).length)
     || ((b.scannedQRs || []).length) - ((a.scannedQRs || []).length)
-    || _joinedMs(a.joinedAt) - _joinedMs(b.joinedAt)
+    || (a.tbOrder ?? 9999) - (b.tbOrder ?? 9999)
     || String(a.nickname || a.id || '').localeCompare(String(b.nickname || b.id || ''));
 }
 
@@ -2375,7 +2557,7 @@ async function resetAll() {
   for (let i = 0; i < pSnap.docs.length; i += chunkSize) {
     const batch = db.batch();
     pSnap.docs.slice(i, i + chunkSize).forEach(d => {
-      batch.update(d.ref, { points: 0, earnedPoints: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {}, badges: [], claimedMilestones: [], activeQuiz: firebase.firestore.FieldValue.delete() });
+      batch.update(d.ref, { points: 0, earnedPoints: 0, completedLocations: [], scannedQRs: [], assignedQuizzes: {}, badges: [], claimedMilestones: [], activeQuiz: firebase.firestore.FieldValue.delete(), tbOrder: firebase.firestore.FieldValue.delete() });
     });
     await batch.commit();
   }
@@ -2398,6 +2580,9 @@ async function resetAll() {
 
   // 채팅 메시지 전체 삭제
   await _deleteCollection('chat', chunkSize);
+
+  // 결승전 기록 삭제
+  await db.collection('config').doc('tiebreaker').delete().catch(() => {});
 
   showToast('전체 초기화 완료');
 }

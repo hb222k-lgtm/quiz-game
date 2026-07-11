@@ -318,6 +318,30 @@
     }
   </style>
 
+  <!-- ⚔️ 동점 결승전 오버레이 -->
+  <div id="tb-overlay" style="
+    display:none; position:fixed; inset:0; z-index:99990;
+    background:linear-gradient(160deg,#0d0720 0%,#1a0a35 40%,#2d1060 100%);
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; text-align:center; overflow-y:auto;">
+    <div style="font-size:44px; margin-bottom:6px;">⚔️</div>
+    <h2 style="color:#fff; font-size:21px; font-weight:900; margin-bottom:2px;">동점 결승전</h2>
+    <div id="tb-round" style="color:#c4b5fd; font-size:13px; font-weight:700; margin-bottom:16px;"></div>
+    <div id="tb-status" style="color:#fde68a; font-size:14px; font-weight:800; margin-bottom:14px; min-height:20px;"></div>
+    <div id="tb-question" style="
+      background:rgba(255,255,255,0.08); border:1.5px solid rgba(167,139,250,0.35);
+      border-radius:16px; padding:16px; color:#fff; font-size:16px; font-weight:700;
+      line-height:1.6; margin-bottom:14px; width:100%; max-width:420px;"></div>
+    <div id="tb-options" style="display:flex; flex-direction:column; gap:10px; width:100%; max-width:420px;"></div>
+    <div id="tb-footer" style="color:rgba(196,181,253,0.6); font-size:12px; margin-top:16px; line-height:1.6;">
+      먼저 틀린 사람부터 탈락! 맞히면 다음 문제로 계속돼요
+    </div>
+    <button id="tb-close" onclick="document.getElementById('tb-overlay').style.display='none'" style="
+      display:none; margin-top:14px; padding:12px 28px;
+      background:rgba(255,255,255,0.12); color:#e9d5ff; border:none;
+      border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;">닫기</button>
+  </div>
+
   <!-- GPS 권한 안내 카드 -->
   <div id="gps-guide" style="
     display:none; position:fixed; bottom:72px; left:12px; right:12px; z-index:9000;
@@ -1282,17 +1306,12 @@
     }
 
     // ── 동점 방지 순위 비교 ──────────────────────────
-    // 포인트 → 완료 장소 수 → QR 스캔 수 → 먼저 가입한 순 → 닉네임순
-    function _joinedMs(v) {
-      if (!v) return Number.MAX_SAFE_INTEGER; // 가입시각 없으면 최하위
-      const t = v.toDate ? v.toDate().getTime() : new Date(v).getTime();
-      return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
-    }
+    // 포인트 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
     function rankCompare(a, b) {
       return (b.points || 0) - (a.points || 0)
         || ((b.completedLocations || []).length) - ((a.completedLocations || []).length)
         || ((b.scannedQRs || []).length) - ((a.scannedQRs || []).length)
-        || _joinedMs(a.joinedAt) - _joinedMs(b.joinedAt)
+        || (a.tbOrder ?? 9999) - (b.tbOrder ?? 9999)
         || String(a.nick || a.nickname || '').localeCompare(String(b.nick || b.nickname || ''));
     }
 
@@ -1378,6 +1397,7 @@
       listenAnnouncements();
       checkRecentAnnouncement();
       listenGoldenTimeBanner(); // ⚡ 골든타임 배너
+      listenTiebreaker();       // ⚔️ 동점 결승전
     }
 
     // ── 골든타임 배너 리스너 ────────────────────────
@@ -1407,6 +1427,107 @@
         updateCountdown();
         _goldenCountdownTimer = setInterval(updateCountdown, 1000);
       });
+    }
+
+    // ── ⚔️ 동점 결승전 (참가자) ──────────────────────
+    let _tbAnsweredRound = 0; // 내가 답을 제출한 라운드 (중복 제출 방지)
+
+    let _tbResultShown = null; // 결과 토스트 중복 방지 (startedAt 기준)
+
+    function listenTiebreaker() {
+      db.collection('config').doc('tiebreaker').onSnapshot(snap => {
+        const d = snap.data();
+        const ov = document.getElementById('tb-overlay');
+        if (!d || !d.active || !(d.contestants || []).includes(nickname)) {
+          ov.style.display = 'none';
+          // 결승전 종료 + 순위 반영 → 내 결과 토스트 (1회)
+          if (d && !d.active && d.applied && (d.contestants || []).includes(nickname)
+              && _tbResultShown !== d.startedAt) {
+            _tbResultShown = d.startedAt;
+            const elimIds = (d.eliminated || []).map(e => e.id);
+            const alive = (d.contestants || []).filter(n => !elimIds.includes(n));
+            const placement = [...alive, ...[...elimIds].reverse()];
+            const place = placement.indexOf(nickname) + 1;
+            showToast(place === 1 ? '🏆 결승전 우승! 순위가 확정됐어요!' : `⚔️ 결승전 ${place}위로 확정됐어요`);
+          }
+          return;
+        }
+        renderTiebreaker(d);
+      }, e => console.warn('결승전 수신 오류:', e));
+    }
+
+    function renderTiebreaker(d) {
+      const ov       = document.getElementById('tb-overlay');
+      const statusEl = document.getElementById('tb-status');
+      const qEl      = document.getElementById('tb-question');
+      const optEl    = document.getElementById('tb-options');
+      const closeBtn = document.getElementById('tb-close');
+      const footer   = document.getElementById('tb-footer');
+      ov.style.display = 'flex';
+
+      const elimIds = (d.eliminated || []).map(e => e.id);
+      const aliveN  = (d.contestants || []).length - elimIds.length;
+      document.getElementById('tb-round').textContent = `${d.round}라운드 · 생존 ${aliveN}명`;
+
+      // 내가 탈락한 경우: 확정 순위 표시
+      if (elimIds.includes(nickname)) {
+        const myIdx = elimIds.indexOf(nickname);
+        const place = (d.contestants || []).length - myIdx; // 먼저 탈락할수록 낮은 순위
+        statusEl.textContent = `😢 탈락! 결승전 ${place}위`;
+        qEl.style.display = 'none';
+        optEl.innerHTML = '';
+        footer.textContent = '수고했어요! 최종 순위에 반영돼요';
+        closeBtn.style.display = 'inline-block';
+        return;
+      }
+
+      closeBtn.style.display = 'none';
+      qEl.style.display = 'block';
+      footer.textContent = '먼저 틀린 사람부터 탈락! 맞히면 다음 문제로 계속돼요';
+      qEl.textContent = d.question || '';
+
+      const answered = (d.answeredBy || []).includes(nickname) || _tbAnsweredRound === d.round;
+      statusEl.textContent = answered
+        ? '✅ 정답! 다른 참가자를 기다리는 중…'
+        : '⚡ 신중하게! 틀리면 바로 탈락이에요';
+
+      optEl.innerHTML = '';
+      (d.options || []).forEach((opt, i) => {
+        const btn = document.createElement('button');
+        btn.textContent = `${['①','②','③','④'][i] || (i + 1)} ${opt}`;
+        btn.disabled = answered;
+        btn.style.cssText = `padding:14px 16px; border:1.5px solid rgba(167,139,250,0.4);
+          border-radius:14px; background:${answered ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.1)'};
+          color:#fff; font-size:15px; font-weight:700; cursor:pointer; text-align:left; font-family:inherit;`;
+        btn.onclick = () => answerTiebreaker(i, d);
+        optEl.appendChild(btn);
+      });
+    }
+
+    async function answerTiebreaker(i, d) {
+      if (_tbAnsweredRound === d.round) return; // 라운드당 1회만
+      _tbAnsweredRound = d.round;
+      const ref = db.collection('config').doc('tiebreaker');
+
+      if (i === d.correctIndex) {
+        // 정답 → 생존 보고 (다 맞히면 관리자 화면에서 자동 다음 문제)
+        if (navigator.vibrate) navigator.vibrate(80);
+        ref.update({ answeredBy: firebase.firestore.FieldValue.arrayUnion(nickname) }).catch(() => {});
+        renderTiebreaker({ ...d, answeredBy: [...(d.answeredBy || []), nickname] });
+      } else {
+        // 오답 → 탈락 (트랜잭션 배열 추가로 탈락 순서 보존)
+        if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
+        try {
+          await db.runTransaction(async tx => {
+            const s = await tx.get(ref);
+            const cur = s.data();
+            if (!cur?.active) return;
+            const elim = cur.eliminated || [];
+            if (elim.some(e => e.id === nickname)) return;
+            tx.update(ref, { eliminated: [...elim, { id: nickname, round: cur.round, at: Date.now() }] });
+          });
+        } catch (e) { console.warn('탈락 기록 오류:', e); }
+      }
     }
 
     // ── GPS 권한 사전 안내 화면 ──────────────────────
