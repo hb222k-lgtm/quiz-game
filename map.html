@@ -1281,11 +1281,26 @@
       }, 3800);
     }
 
+    // ── 동점 방지 순위 비교 ──────────────────────────
+    // 포인트 → 완료 장소 수 → QR 스캔 수 → 먼저 가입한 순 → 닉네임순
+    function _joinedMs(v) {
+      if (!v) return Number.MAX_SAFE_INTEGER; // 가입시각 없으면 최하위
+      const t = v.toDate ? v.toDate().getTime() : new Date(v).getTime();
+      return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+    }
+    function rankCompare(a, b) {
+      return (b.points || 0) - (a.points || 0)
+        || ((b.completedLocations || []).length) - ((a.completedLocations || []).length)
+        || ((b.scannedQRs || []).length) - ((a.scannedQRs || []).length)
+        || _joinedMs(a.joinedAt) - _joinedMs(b.joinedAt)
+        || String(a.nick || a.nickname || '').localeCompare(String(b.nick || b.nickname || ''));
+    }
+
     function startRankListener() {
       db.collection('participants').onSnapshot(snap => {
         const all = snap.docs
-          .map(d => ({ nick: d.id, points: d.data().points || 0 }))
-          .sort((a, b) => b.points - a.points);
+          .map(d => ({ ...d.data(), nick: d.id, points: d.data().points || 0 }))
+          .sort(rankCompare);
 
         const myIdx  = all.findIndex(p => p.nick === nickname);
         if (myIdx === -1) return;
@@ -1544,8 +1559,8 @@
 
     function renderPlayersList(snap) {
       const players = snap.docs
-        .map(d => ({ nick: d.id, ...d.data() }))
-        .sort((a, b) => (b.points || 0) - (a.points || 0));
+        .map(d => ({ ...d.data(), nick: d.id }))
+        .sort(rankCompare);
 
       const el = document.getElementById('players-list');
       if (!players.length) {
@@ -2030,18 +2045,25 @@
       // 팀별 포인트 합산
       const teamPts = {};
       const teamMembers = {};
-      teams.forEach(t => { teamPts[t.id] = 0; teamMembers[t.id] = []; });
+      const teamLocs = {}, teamScans = {};
+      teams.forEach(t => { teamPts[t.id] = 0; teamMembers[t.id] = []; teamLocs[t.id] = 0; teamScans[t.id] = 0; });
 
       snap.docs.forEach(d => {
         const data = d.data();
         const tid  = data.team;
         if (!tid || !(tid in teamPts)) return;
-        teamPts[tid]     += (data.points || 0);
-        teamMembers[tid].push({ nick: d.id, points: data.points || 0 });
+        teamPts[tid]   += (data.points || 0);
+        teamLocs[tid]  += (data.completedLocations || []).length;
+        teamScans[tid] += (data.scannedQRs || []).length;
+        teamMembers[tid].push({ ...data, nick: d.id, points: data.points || 0 });
       });
 
-      // 정렬
-      const sorted = [...teams].sort((a, b) => (teamPts[b.id]||0) - (teamPts[a.id]||0));
+      // 정렬 (동점 시: 완료 장소 합계 → QR 스캔 합계 → 팀명순)
+      const sorted = [...teams].sort((a, b) =>
+        (teamPts[b.id]||0) - (teamPts[a.id]||0)
+        || (teamLocs[b.id]||0) - (teamLocs[a.id]||0)
+        || (teamScans[b.id]||0) - (teamScans[a.id]||0)
+        || String(a.name||a.id).localeCompare(String(b.name||b.id)));
 
       // 마일스톤 체크 (비동기, fire-and-forget)
       checkTeamMilestones(teamPts, teams, snap);
@@ -2081,7 +2103,7 @@
       el.innerHTML = sorted.map((team, i) => {
         const pts     = teamPts[team.id] || 0;
         const members = (teamMembers[team.id] || [])
-          .sort((a, b) => b.points - a.points);
+          .sort(rankCompare);
         const isMyTeam = team.id === myTeamId;
         const medal = medals[i] || `<span style="font-size:13px;font-weight:800;color:#64748b;">${i+1}</span>`;
         const topMembers = members.slice(0, 3).map(m =>
