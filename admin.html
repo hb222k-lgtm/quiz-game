@@ -104,7 +104,7 @@
     <button class="tab-btn" onclick="switchTab('locations', this)">📍 장소</button>
     <button class="tab-btn" onclick="switchTab('quizbank', this)">📝 문제은행</button>
     <button class="tab-btn" onclick="switchTab('qrcodes', this)">📷 QR코드</button>
-    <button class="tab-btn" onclick="switchTab('shop', this)">🛒 상점</button>
+    <button class="tab-btn" onclick="switchTab('pay', this)">💳 결제</button>
     <button class="tab-btn" onclick="switchTab('settings', this)">⚙️ 설정</button>
     <button class="tab-btn" onclick="switchTab('announce', this)">📢 공지</button>
   </div>
@@ -277,24 +277,28 @@
       <div id="qrcodes-list"></div>
     </div>
 
-    <!-- ── 상점 탭 ── -->
-    <div class="tab-panel" id="tab-shop">
-      <!-- 미확인 주문 -->
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-        <h3 style="font-weight:700;">📬 미확인 주문 <span id="pending-count" style="background:#ef4444;color:#fff;border-radius:20px;padding:2px 8px;font-size:12px;"></span></h3>
+    <!-- ── 💳 결제 탭 ── -->
+    <div class="tab-panel" id="tab-pay">
+      <div class="card" style="margin-bottom:12px;">
+        <h3 style="font-weight:700; margin-bottom:4px;">💳 QR 결제 내역</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px; line-height:1.6;">
+          결제 QR은 <b>📷 QR코드 탭 → 💳 포인트 결제</b> 타입으로 만들어요.<br>
+          부스·매점에 붙여두면 학생이 스캔해서 포인트로 결제하고, 내역이 여기 실시간으로 쌓여요.
+        </p>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1; background:#f5f3ff; border-radius:12px; padding:12px; text-align:center;">
+            <div id="pay-total-count" style="font-size:22px; font-weight:900; color:#7c3aed;">0</div>
+            <div style="font-size:12px; color:#64748b; font-weight:600;">총 결제 건수</div>
+          </div>
+          <div style="flex:1; background:#ccfbf1; border-radius:12px; padding:12px; text-align:center;">
+            <div id="pay-total-sum" style="font-size:22px; font-weight:900; color:#0f766e;">0</div>
+            <div style="font-size:12px; color:#64748b; font-weight:600;">총 결제 포인트</div>
+          </div>
+        </div>
       </div>
-      <div id="pending-orders-list" style="margin-bottom:16px;"></div>
-
-      <div class="divider"></div>
-      <button class="btn btn-primary mb-8" onclick="openShopItemModal()">+ 상품 추가</button>
-      <div id="shop-items-list"></div>
-
-      <!-- 팀 전용 상품 -->
-      <div class="divider" style="margin-top:24px;"></div>
-      <h3 style="font-weight:700; margin-bottom:4px;">🏷️ 팀 전용 상품 관리</h3>
-      <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">팀에 속한 누구나 구매 가능 · 구매 시 팀원 전체 1/n 자동 차감</p>
-      <button class="btn btn-primary mb-8" onclick="openTeamShopItemModal()">+ 팀 상품 추가</button>
-      <div id="team-shop-items-list"></div>
+      <div id="payments-list">
+        <p class="text-muted text-center" style="padding:24px; font-size:13px;">아직 결제 내역이 없어요</p>
+      </div>
     </div>
 
     <!-- ── 공지 탭 ── -->
@@ -448,25 +452,13 @@
         <button class="btn btn-primary" style="width:100%;" onclick="saveTransferLimit()">💾 저장</button>
       </div>
 
-      <!-- 전송/선물 내역 카드 -->
+      <!-- 전송 내역 카드 -->
       <div class="card mt-16">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-          <h3 style="font-weight:700;">📋 전송·선물 내역</h3>
+          <h3 style="font-weight:700;">💌 포인트 전송 내역</h3>
           <button class="btn btn-outline btn-sm" onclick="loadTransferLog()" style="font-size:12px;">새로고침</button>
         </div>
-        <!-- 탭 -->
-        <div style="display:flex; gap:6px; margin-bottom:12px; background:#f1f5f9; border-radius:10px; padding:3px;">
-          <button id="tlog-tab-points" onclick="switchTransferTab('points')" style="
-            flex:1; padding:7px; border:none; border-radius:8px; font-size:13px; font-weight:700;
-            cursor:pointer; background:#7c3aed; color:#fff;">💌 포인트</button>
-          <button id="tlog-tab-gift" onclick="switchTransferTab('gift')" style="
-            flex:1; padding:7px; border:none; border-radius:8px; font-size:13px; font-weight:700;
-            cursor:pointer; background:transparent; color:#7c3aed;">🎁 선물</button>
-        </div>
         <div id="transfer-log-list">
-          <p style="font-size:13px; color:#94a3b8; text-align:center; padding:12px;">불러오는 중...</p>
-        </div>
-        <div id="gift-log-list" style="display:none;">
           <p style="font-size:13px; color:#94a3b8; text-align:center; padding:12px;">불러오는 중...</p>
         </div>
       </div>
@@ -563,80 +555,6 @@
 
     <input type="hidden" id="give-points-nickname">
     <button class="btn btn-primary" onclick="givePoints()">적용</button>
-  </div>
-</div>
-
-<!-- ── 상품 추가/수정 모달 ── -->
-<div class="modal-overlay" id="shop-item-modal">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('shop-item-modal')">✕</button>
-    <h3 id="shop-item-modal-title">상품 추가</h3>
-
-    <div style="display:grid; grid-template-columns:64px 1fr; gap:8px;" class="form-group">
-      <div>
-        <label>이모지</label>
-        <input type="text" id="item-emoji" placeholder="🎁" maxlength="2" style="text-align:center; font-size:24px;">
-      </div>
-      <div>
-        <label>상품명</label>
-        <input type="text" id="item-name" placeholder="예: 아이스크림">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>설명</label>
-      <input type="text" id="item-desc" placeholder="간단한 설명 (선택)">
-    </div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
-      <div>
-        <label>가격 (포인트)</label>
-        <input type="number" id="item-price" value="100" min="1">
-      </div>
-      <div>
-        <label>수량 (-1 = 무제한)</label>
-        <input type="number" id="item-stock" value="-1">
-      </div>
-    </div>
-
-    <input type="hidden" id="item-edit-id">
-    <button class="btn btn-primary" onclick="saveShopItem()">저장하기</button>
-  </div>
-</div>
-
-<!-- ── 팀 상품 추가/수정 모달 ── -->
-<div class="modal-overlay" id="team-shop-item-modal">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('team-shop-item-modal')">✕</button>
-    <h3 id="team-shop-item-modal-title">팀 상품 추가</h3>
-    <p style="font-size:13px; color:#7c3aed; background:#f5f3ff; padding:8px 12px; border-radius:10px; margin-bottom:12px;">
-      🏷️ 팀에 속한 누구든 구매 가능한 상품이에요. 구매 시 팀원 전체에게 1/n 비용이 차감됩니다.
-    </p>
-    <div style="display:grid; grid-template-columns:64px 1fr; gap:8px;" class="form-group">
-      <div>
-        <label>이모지</label>
-        <input type="text" id="tsi-emoji" placeholder="🎁" maxlength="2" style="text-align:center; font-size:24px;">
-      </div>
-      <div>
-        <label>상품명</label>
-        <input type="text" id="tsi-name" placeholder="예: 치킨 1마리">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>설명</label>
-      <input type="text" id="tsi-desc" placeholder="간단한 설명 (선택)">
-    </div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;" class="form-group">
-      <div>
-        <label>총 가격 (팀 전체 합산)</label>
-        <input type="number" id="tsi-price" value="500" min="1">
-      </div>
-      <div>
-        <label>수량 (-1 = 무제한)</label>
-        <input type="number" id="tsi-stock" value="-1">
-      </div>
-    </div>
-    <p id="tsi-price-hint" style="font-size:12px; color:#7c3aed; font-weight:600; margin-bottom:12px;">💡 구매 시 팀원 수로 나눈 1인당 금액이 전원에게 자동 차감돼요</p>
-    <input type="hidden" id="tsi-edit-id">
-    <button class="btn btn-primary" onclick="saveTeamShopItem()">저장하기</button>
   </div>
 </div>
 
@@ -864,6 +782,10 @@
           <input type="radio" name="qr-type" value="team_mission" onchange="toggleQRType('team_mission')" style="display:none">
           🤝<span>팀 미션</span>
         </label>
+        <label class="qr-type-btn" id="qropt-pay">
+          <input type="radio" name="qr-type" value="pay" onchange="toggleQRType('pay')" style="display:none">
+          💳<span>포인트 결제</span>
+        </label>
       </div>
     </div>
 
@@ -903,6 +825,18 @@
         <label>팀 보너스 포인트 (팀 전원 지급)</label>
         <input type="number" id="qr-team-bonus" value="200" min="1">
       </div>
+    </div>
+
+    <!-- 💳 결제 섹션 -->
+    <div id="qr-pay-section" style="display:none;">
+      <div style="background:#faf5ff; border:1.5px solid #c4b5fd; border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; color:#6d28d9; line-height:1.6;">
+        💳 부스·매점에 붙여두면 학생이 스캔해서 포인트로 결제해요.<br>
+        결제 내역은 <b>💳 결제 탭</b>에서 실시간으로 확인할 수 있어요.
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; margin-bottom:12px; cursor:pointer;">
+        <input type="checkbox" id="qr-pay-once" style="width:18px; height:18px; accent-color:#7c3aed;">
+        1인 1회만 결제 가능 <span style="color:#94a3b8; font-weight:400;">(체크 안 하면 반복 결제 가능)</span>
+      </label>
     </div>
 
     <!-- 힌트 체인 -->
@@ -1447,7 +1381,6 @@ function switchTab(id, btn) {
   if (id === 'settings' || id === 'announce') loadRecentAnnouncements('inline');
   if (id === 'settings') { loadGamePeriod(); loadTransferLimit(); loadTransferLog(); }
   if (id === 'teams') loadTeamModeAdmin();
-  if (id === 'shop')  renderTeamShopItems();
 }
 
 // ── 관리자 초기화 ─────────────────────────────────
@@ -1459,8 +1392,7 @@ function initAdmin() {
   listenLocations();
   listenQuizBank();
   listenQRCodes();
-  listenShopItems();
-  listenTeamShopItems();
+  listenPayments();
   listenTiebreakerAdmin();
 }
 
@@ -2273,8 +2205,10 @@ function openPrintWindow(codes) {
     half:    ()  => `✂️ 점수 절반`,
     nothing: ()  => `💨 꽝`,
     quiz:    (p) => `❓ 퀴즈 +${p}점`,
+    pay:     (p) => `💳 결제 ${p}점`,
   };
   const TYPE_COLOR = {
+    pay:'#0f766e',
     points:'#15803d', minus:'#dc2626', double:'#7c3aed',
     half:'#ea580c',   nothing:'#64748b', quiz:'#6d28d9',
   };
@@ -2332,6 +2266,7 @@ const QR_TYPE_INFO = {
   nothing: { label: '💨 꽝',           color: '#64748b', bg: '#f1f5f9' },
   quiz:         { label: '❓ 퀴즈',    color: '#6d28d9', bg: '#ede9fe' },
   team_mission: { label: '🤝 팀 미션', color: '#0369a1', bg: '#e0f2fe' },
+  pay:          { label: '💳 결제',    color: '#0f766e', bg: '#ccfbf1' },
 };
 
 const QR_EFFECT_DESC = {
@@ -2342,16 +2277,17 @@ const QR_EFFECT_DESC = {
 
 function toggleQRType(type) {
   // 버튼 스타일 갱신
-  ['points','minus','double','half','nothing','quiz','team_mission'].forEach(t => {
+  ['points','minus','double','half','nothing','quiz','team_mission','pay'].forEach(t => {
     document.getElementById('qropt-' + t)?.classList.toggle('active', t === type);
   });
   // 섹션 표시
-  const showAmount = type === 'points' || type === 'minus';
+  const showAmount = type === 'points' || type === 'minus' || type === 'pay';
   document.getElementById('qr-amount-section').style.display = showAmount ? 'block' : 'none';
   document.getElementById('qr-amount-label').textContent =
-    type === 'minus' ? '차감 포인트' : '지급 포인트';
+    type === 'minus' ? '차감 포인트' : type === 'pay' ? '결제 금액 (점)' : '지급 포인트';
   document.getElementById('qr-quiz-section').style.display = type === 'quiz' ? 'block' : 'none';
   document.getElementById('qr-team-mission-section').style.display = type === 'team_mission' ? 'block' : 'none';
+  document.getElementById('qr-pay-section').style.display = type === 'pay' ? 'block' : 'none';
   const effectInfo = QR_EFFECT_DESC[type];
   const effectEl = document.getElementById('qr-effect-section');
   if (effectInfo) {
@@ -2373,6 +2309,7 @@ function openQRModal() {
   document.getElementById('qr-quiz-points').value = '100';
   document.getElementById('qr-team-required').value = '3';
   document.getElementById('qr-team-bonus').value = '200';
+  document.getElementById('qr-pay-once').checked = false;
   document.getElementById('qr-hint').value = '';
   document.getElementById('qr-start-at').value = '';
   document.getElementById('qr-end-at').value = '';
@@ -2398,6 +2335,10 @@ async function generateQR() {
     const requiredMembers = parseInt(document.getElementById('qr-team-required').value) || 3;
     const teamBonusPoints = parseInt(document.getElementById('qr-team-bonus').value) || 200;
     data = { label, type: 'team_mission', requiredMembers, teamBonusPoints, enabled: true, usedBy: [], teamProgress: {} };
+  } else if (type === 'pay') {
+    const points = parseInt(document.getElementById('qr-points').value) || 100;
+    const oncePer = document.getElementById('qr-pay-once').checked;
+    data = { label, type: 'pay', points, oncePer, enabled: true, usedBy: [] };
   } else {
     // double / half / nothing — 포인트 필드 없음
     data = { label, type, enabled: true, usedBy: [] };
@@ -2447,6 +2388,9 @@ function showQRImage(id) {
   } else if (qr.type === 'team_mission') {
     document.getElementById('qr-team-required').value = qr.requiredMembers || 3;
     document.getElementById('qr-team-bonus').value = qr.teamBonusPoints || 200;
+  } else if (qr.type === 'pay') {
+    document.getElementById('qr-points').value = qr.points || 100;
+    document.getElementById('qr-pay-once').checked = !!qr.oncePer;
   }
   document.getElementById('qr-hint').value = qr.hint || '';
   // datetime-local은 "YYYY-MM-DDTHH:MM" 형식(16자)만 허용
@@ -2562,12 +2506,14 @@ async function resetAll() {
     await batch.commit();
   }
 
-  // 구매 내역(orders) 전체 삭제
-  const oSnap = await db.collection('orders').get();
-  for (let i = 0; i < oSnap.docs.length; i += chunkSize) {
-    const batch = db.batch();
-    oSnap.docs.slice(i, i + chunkSize).forEach(d => batch.delete(d.ref));
-    await batch.commit();
+  // 구매(orders)·결제(payments) 내역 전체 삭제
+  for (const coll of ['orders', 'payments']) {
+    const oSnap = await db.collection(coll).get();
+    for (let i = 0; i < oSnap.docs.length; i += chunkSize) {
+      const batch = db.batch();
+      oSnap.docs.slice(i, i + chunkSize).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
   }
 
   // QR 사용 기록 초기화
@@ -2630,264 +2576,38 @@ async function deleteAllQRCodes() {
   showToast('QR 코드 전체 삭제 완료');
 }
 
-// ── 상점 관리 ────────────────────────────────
-let shopItemsData = [];
+// ── 💳 QR 결제 내역 ───────────────────────────
+let paymentsData = [];
 
-function listenShopItems() {
-  // 상품 목록
-  db.collection('shop_items').onSnapshot(snap => {
-    shopItemsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderShopItems();
-  });
-
-  // 미확인 주문 실시간
-  db.collection('orders').where('confirmed', '==', false).onSnapshot(snap => {
-    const orders = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (a.purchasedAt || '') > (b.purchasedAt || '') ? 1 : -1);
-    renderPendingOrders(orders);
-  });
+function listenPayments() {
+  db.collection('payments').orderBy('paidAt', 'desc').limit(200).onSnapshot(snap => {
+    paymentsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPayments();
+  }, e => console.warn('결제 내역 수신 오류:', e));
 }
 
-function renderPendingOrders(orders) {
-  const el = document.getElementById('pending-orders-list');
-  const badge = document.getElementById('pending-count');
-  badge.textContent = orders.length > 0 ? orders.length : '';
-  badge.style.display = orders.length > 0 ? 'inline' : 'none';
-
-  if (!orders.length) {
-    el.innerHTML = '<p class="text-muted" style="font-size:13px; padding:8px 0;">미확인 주문이 없어요 ✅</p>';
-    return;
-  }
-
-  el.innerHTML = orders.map(o => {
-    const teamLabel = o.teamOrder
-      ? `<span style="font-size:11px;background:#f5f3ff;color:#7c3aed;padding:1px 7px;border-radius:8px;font-weight:700;margin-left:4px;">🏷️팀(${o.memberCount}명)</span>`
-      : '';
-    return `
-    <div class="rank-row" style="margin-bottom:8px; border:2px solid #fef08a; flex-wrap:wrap; gap:8px;">
-      <div style="font-size:28px; margin-right:10px; flex-shrink:0;">${o.emoji || '🎁'}</div>
-      <div class="rank-info" style="flex:1; min-width:0;">
-        <div class="rank-name">${escHtml(o.nickname)}${teamLabel}</div>
-        <div class="rank-detail">${escHtml(o.itemName)} · ${o.price}점</div>
-        <div style="font-size:11px; color:#94a3b8;">${o.purchasedAt ? new Date(o.purchasedAt).toLocaleString('ko-KR') : ''}</div>
-      </div>
-      <button data-order-id="${o.id}" onclick="confirmOrder(this.dataset.orderId)"
-        style="background:#16a34a;color:#fff;border:none;border-radius:10px;
-               padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;
-               white-space:nowrap;flex-shrink:0;">✅ 수령 확인</button>
-    </div>`;
-  }).join('');
-}
-
-async function confirmOrder(orderId) {
-  await db.collection('orders').doc(orderId).update({
-    confirmed: true,
-    confirmedAt: new Date().toISOString(),
-  });
-  showToast('수령 확인 완료!');
-}
-
-function renderShopItems() {
-  const el = document.getElementById('shop-items-list');
-  if (!shopItemsData.length) {
-    el.innerHTML = '<p class="text-muted text-center" style="padding:24px;">상품이 없어요. 추가해보세요!</p>';
-    return;
-  }
-  el.innerHTML = shopItemsData.map(item => `
-    <div class="item-card">
-      <div style="font-size:32px; width:44px; text-align:center; flex-shrink:0;">${item.emoji || '🎁'}</div>
-      <div class="item-info">
-        <h4>${escHtml(item.name)}</h4>
-        <p>⭐ ${item.price}점 · 재고: ${item.stock < 0 ? '무제한' : item.stock + '개'}
-          &nbsp;<span class="badge ${item.enabled ? 'badge-green' : 'badge-gray'}">${item.enabled ? '판매중' : '숨김'}</span>
-        </p>
-      </div>
-      <div class="item-actions">
-        <button class="btn btn-primary btn-sm" onclick="editShopItem('${item.id}')">수정</button>
-        <button class="btn btn-sm" style="background:#f1f5f9; color:#1e293b;"
-          onclick="toggleShopItem('${item.id}', ${!item.enabled})">${item.enabled ? '숨기기' : '보이기'}</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteShopItem('${item.id}')">삭제</button>
-      </div>
-    </div>`).join('');
-}
-
-function renderPurchaseHistory(list) {
-  const el = document.getElementById('purchase-history-list');
-  if (!list.length) {
-    el.innerHTML = '<p class="text-muted" style="font-size:13px;">아직 구매 내역이 없어요</p>';
-    return;
-  }
-  el.innerHTML = list.map(p => `
-    <div class="rank-row" style="margin-bottom:8px;">
-      <div style="font-size:24px; margin-right:10px;">${p.emoji || '🎁'}</div>
-      <div class="rank-info">
-        <div class="rank-name">${escHtml(p.nickname)}</div>
-        <div class="rank-detail">${escHtml(p.itemName)}</div>
-      </div>
-      <div style="font-weight:700; color:#7c3aed;">-${p.price}점</div>
-    </div>`).join('');
-}
-
-function openShopItemModal(editId) {
-  document.getElementById('shop-item-modal-title').textContent = editId ? '상품 수정' : '상품 추가';
-  document.getElementById('item-edit-id').value = editId || '';
-  if (!editId) {
-    document.getElementById('item-emoji').value = '';
-    document.getElementById('item-name').value  = '';
-    document.getElementById('item-desc').value  = '';
-    document.getElementById('item-price').value = '100';
-    document.getElementById('item-stock').value = '-1';
-  }
-  document.getElementById('shop-item-modal').classList.add('visible');
-}
-
-function editShopItem(id) {
-  const item = shopItemsData.find(i => i.id === id);
-  if (!item) return;
-  document.getElementById('item-emoji').value = item.emoji || '';
-  document.getElementById('item-name').value  = item.name || '';
-  document.getElementById('item-desc').value  = item.description || '';
-  document.getElementById('item-price').value = item.price || 100;
-  document.getElementById('item-stock').value = item.stock ?? -1;
-  openShopItemModal(id);
-}
-
-async function saveShopItem() {
-  const emoji = document.getElementById('item-emoji').value.trim() || '🎁';
-  const name  = document.getElementById('item-name').value.trim();
-  const desc  = document.getElementById('item-desc').value.trim();
-  const priceRaw = parseInt(document.getElementById('item-price').value);
-  const price = isNaN(priceRaw) ? 100 : priceRaw;
-  const stockRaw = parseInt(document.getElementById('item-stock').value);
-  const stock = isNaN(stockRaw) ? -1 : Math.max(-1, stockRaw);  // -1 미만은 -1(무제한)으로 정규화
-  const editId = document.getElementById('item-edit-id').value;
-
-  if (!name) { showToast('상품명을 입력해주세요'); return; }
-  if (price < 0) { showToast('가격은 0점 이상이어야 해요'); return; }
-
-  const data = { emoji, name, description: desc, price, stock, enabled: true };
-  try {
-    if (editId) {
-      await db.collection('shop_items').doc(editId).update(data);
-      showToast('상품이 수정됐어요');
-    } else {
-      await db.collection('shop_items').add(data);
-      showToast('상품이 추가됐어요');
-    }
-    closeModal('shop-item-modal');
-  } catch (e) {
-    showToast('저장 실패: ' + e.message);
-  }
-}
-
-async function toggleShopItem(id, enabled) {
-  await db.collection('shop_items').doc(id).update({ enabled });
-  showToast(enabled ? '상품이 보이게 됐어요' : '상품이 숨겨졌어요');
-}
-
-async function deleteShopItem(id) {
-  if (!confirm('이 상품을 삭제할까요?')) return;
-  await db.collection('shop_items').doc(id).delete();
-  showToast('상품이 삭제됐어요');
-}
-
-// ── 팀 전용 상품 관리 ─────────────────────────
-let teamShopItemsData = [];
-
-function listenTeamShopItems() {
-  db.collection('team_shop_items').onSnapshot(snap => {
-    teamShopItemsData = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(i => i.enabled !== false);
-    renderTeamShopItems();
-  });
-}
-
-function updateTeamShopSelects() {
-  // 팀 지정 없이 모든 팀 공용 → 별도 셀렉트 불필요, 아무것도 하지 않음
-}
-
-function renderTeamShopItems() {
-  const el = document.getElementById('team-shop-items-list');
+function renderPayments() {
+  const el = document.getElementById('payments-list');
   if (!el) return;
-  if (!teamShopItemsData.length) {
-    el.innerHTML = '<p class="text-muted text-center" style="padding:16px;">팀 상품이 없어요. 추가해보세요!</p>';
+  const cnt = document.getElementById('pay-total-count');
+  const sum = document.getElementById('pay-total-sum');
+  if (cnt) cnt.textContent = paymentsData.length + (paymentsData.length >= 200 ? '+' : '');
+  if (sum) sum.textContent = paymentsData.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString();
+
+  if (!paymentsData.length) {
+    el.innerHTML = '<p class="text-muted text-center" style="padding:24px; font-size:13px;">아직 결제 내역이 없어요</p>';
     return;
   }
-  el.innerHTML = teamShopItemsData.map(item => {
-    const stockTxt = item.stock < 0 ? '무제한' : `${item.stock}개`;
-    return `
-      <div class="item-card">
-        <div style="font-size:32px; width:44px; text-align:center; flex-shrink:0;">${item.emoji||'🎁'}</div>
-        <div class="item-info">
-          <h4>${escHtml(item.name)}</h4>
-          <p>⭐ 총 ${item.price}점 · 재고: ${stockTxt}</p>
-        </div>
-        <div class="item-actions">
-          <button class="btn btn-primary btn-sm" onclick="editTeamShopItem('${item.id}')">수정</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteTeamShopItem('${item.id}')">삭제</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function openTeamShopItemModal(editId) {
-  document.getElementById('team-shop-item-modal-title').textContent = editId ? '팀 상품 수정' : '팀 상품 추가';
-  document.getElementById('tsi-edit-id').value = editId || '';
-  if (!editId) {
-    document.getElementById('tsi-emoji').value = '';
-    document.getElementById('tsi-name').value  = '';
-    document.getElementById('tsi-desc').value  = '';
-    document.getElementById('tsi-price').value = '500';
-    document.getElementById('tsi-stock').value = '-1';
-    document.getElementById('tsi-price-hint').textContent = '';
-  }
-  document.getElementById('team-shop-item-modal').classList.add('visible');
-}
-
-function editTeamShopItem(id) {
-  const item = teamShopItemsData.find(i => i.id === id);
-  if (!item) return;
-  document.getElementById('tsi-emoji').value = item.emoji || '';
-  document.getElementById('tsi-name').value  = item.name || '';
-  document.getElementById('tsi-desc').value  = item.description || '';
-  document.getElementById('tsi-price').value = item.price || 500;
-  document.getElementById('tsi-stock').value = item.stock ?? -1;
-  openTeamShopItemModal(id);
-}
-
-async function saveTeamShopItem() {
-  const emoji  = document.getElementById('tsi-emoji').value.trim() || '🎁';
-  const name   = document.getElementById('tsi-name').value.trim();
-  const desc   = document.getElementById('tsi-desc').value.trim();
-  const price  = parseInt(document.getElementById('tsi-price').value);
-  const stock  = parseInt(document.getElementById('tsi-stock').value);
-  const editId = document.getElementById('tsi-edit-id').value;
-
-  if (!name)           { showToast('상품명을 입력해주세요'); return; }
-  if (!price || price < 1) { showToast('총 가격을 입력해주세요'); return; }
-
-  const data = { emoji, name, description: desc, price, stock: isNaN(stock) ? -1 : Math.max(-1, stock), enabled: true };
-  try {
-    if (editId) {
-      await db.collection('team_shop_items').doc(editId).update(data);
-      showToast('팀 상품이 수정됐어요');
-    } else {
-      data.createdAt = new Date().toISOString();
-      await db.collection('team_shop_items').add(data);
-      showToast('팀 상품이 추가됐어요');
-    }
-    closeModal('team-shop-item-modal');
-  } catch(e) {
-    showToast('저장 실패: ' + e.message);
-  }
-}
-
-async function deleteTeamShopItem(id) {
-  if (!confirm('이 팀 상품을 삭제할까요?')) return;
-  await db.collection('team_shop_items').doc(id).delete();
-  showToast('팀 상품이 삭제됐어요');
+  el.innerHTML = paymentsData.map(p => `
+    <div class="rank-row" style="margin-bottom:8px;">
+      <div style="font-size:24px; margin-right:10px; flex-shrink:0;">💳</div>
+      <div class="rank-info" style="flex:1; min-width:0;">
+        <div class="rank-name">${escHtml(p.nickname)}</div>
+        <div class="rank-detail">${escHtml(p.label || '결제')}</div>
+        <div style="font-size:11px; color:#94a3b8;">${p.paidAt ? new Date(p.paidAt).toLocaleString('ko-KR') : ''}</div>
+      </div>
+      <div style="font-weight:900; color:#0f766e; flex-shrink:0;">-${p.amount || 0}점</div>
+    </div>`).join('');
 }
 
 // ── 포인트 지급 모달 ──────────────────────────
@@ -2995,18 +2715,6 @@ async function saveTransferLimit() {
   showToast(val > 0 ? `💌 전송 한도 ${val}점으로 설정됐어요` : '💌 전송 한도 무제한으로 설정됐어요');
 }
 
-// ── 전송·선물 탭 전환 ──────────────────────────────
-function switchTransferTab(tab) {
-  const isPoints = tab === 'points';
-  document.getElementById('transfer-log-list').style.display = isPoints ? '' : 'none';
-  document.getElementById('gift-log-list').style.display     = isPoints ? 'none' : '';
-  document.getElementById('tlog-tab-points').style.background = isPoints ? '#7c3aed' : 'transparent';
-  document.getElementById('tlog-tab-points').style.color      = isPoints ? '#fff' : '#7c3aed';
-  document.getElementById('tlog-tab-gift').style.background   = isPoints ? 'transparent' : '#7c3aed';
-  document.getElementById('tlog-tab-gift').style.color        = isPoints ? '#7c3aed' : '#fff';
-  if (!isPoints) loadGiftLog();
-}
-
 // ── 포인트 전송 내역 ──────────────────────────────
 async function loadTransferLog() {
   const el = document.getElementById('transfer-log-list');
@@ -3051,49 +2759,6 @@ async function loadTransferLog() {
   }).join('');
 }
 
-// ── 선물 내역 ─────────────────────────────────────
-async function loadGiftLog() {
-  const el = document.getElementById('gift-log-list');
-  if (!el) return;
-  el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:8px;">불러오는 중...</p>';
-
-  let snap;
-  try {
-    snap = await db.collection('orders').where('isGift', '==', true).limit(50).get();
-  } catch(e) {
-    el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:12px;">선물 내역이 없어요</p>';
-    return;
-  }
-
-  if (!snap || snap.empty) {
-    el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;padding:12px;">선물 내역이 없어요</p>';
-    return;
-  }
-
-  const docs = snap.docs.map(d => d.data()).sort((a, b) =>
-    (b.purchasedAt || '') < (a.purchasedAt || '') ? 1 : -1
-  );
-
-  el.innerHTML = docs.map(t => {
-    const time = t.purchasedAt ? new Date(t.purchasedAt).toLocaleString('ko-KR') : '-';
-    const status = t.confirmed
-      ? '<span style="font-size:11px;background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:8px;font-weight:600;">✅ 수령완료</span>'
-      : '<span style="font-size:11px;background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:8px;font-weight:600;">🕐 대기</span>';
-    return `
-      <div style="padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-          <span style="font-weight:700;">${escHtml(t.giftFrom || '')}</span>
-          <span style="color:#94a3b8;">→</span>
-          <span style="font-weight:700;">${escHtml(t.nickname || '')}</span>
-          ${status}
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="color:#a855f7;font-weight:700;">${t.emoji || '🎁'} ${escHtml(t.itemName || '')}</span>
-          <span style="font-size:11px;color:#94a3b8;">${time}</span>
-        </div>
-      </div>`;
-  }).join('');
-}
 
 async function saveGamePeriod() {
   const sv = document.getElementById('game-start-date').value;

@@ -105,6 +105,28 @@
       </div>
     </div>
 
+    <!-- 💳 결제 확인 영역 -->
+    <div id="pay-confirm-wrap" style="display:none; margin-top:12px;">
+      <div class="card" style="text-align:center; padding:22px 18px;">
+        <div style="font-size:44px; margin-bottom:8px;" id="pay-emoji">💳</div>
+        <div id="pay-label" style="font-size:18px; font-weight:900; margin-bottom:4px;"></div>
+        <div style="font-size:13px; color:#94a3b8; margin-bottom:14px;">포인트로 결제할까요?</div>
+        <div style="background:#f5f3ff; border-radius:14px; padding:14px 16px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:13px; color:#64748b; font-weight:600;">결제 금액</span>
+            <span id="pay-amount" style="font-size:16px; font-weight:900; color:#7c3aed;"></span>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span style="font-size:13px; color:#64748b; font-weight:600;">결제 후 잔액</span>
+            <span id="pay-after" style="font-size:14px; font-weight:800;"></span>
+          </div>
+        </div>
+        <div style="font-size:12px; color:#94a3b8; margin-bottom:12px;">보유: ⭐ <span id="pay-mypts"></span>점</div>
+        <button class="btn btn-primary" id="pay-confirm-btn" onclick="confirmPay()" style="margin-bottom:8px;">💳 결제하기</button>
+        <button class="btn btn-outline" onclick="cancelPay()">취소</button>
+      </div>
+    </div>
+
     <div id="scan-again-wrap" style="display:none; margin-top:12px;">
       <button class="btn btn-outline" onclick="resetScanner()">🔄 다시 스캔하기</button>
     </div>
@@ -117,7 +139,7 @@
 
     <div class="card mt-16 tips-card">
       <p>
-        📌 QR 코드는 1인당 1회만 스캔 가능해요<br>
+        📌 QR 코드는 1인당 1회만 스캔 가능해요 (💳 결제 QR 제외)<br>
         📌 카메라 접근 권한을 허용해야 해요<br>
         📌 밝은 곳에서 스캔하면 더 잘 인식돼요
       </p>
@@ -217,12 +239,22 @@
           return;
         }
 
-        if ((qrData.usedBy || []).includes(nickname)) {
+        // 💳 결제 QR은 반복 사용 가능 (1인 1회 옵션은 자체 체크)
+        if (qrData.type !== 'pay' && (qrData.usedBy || []).includes(nickname)) {
           showResult(false, '이미 스캔한 QR 코드예요.');
           return;
         }
 
-        if (qrData.type === 'quiz') {
+        if (qrData.type === 'pay') {
+          // 💳 포인트 결제 — 확인 화면 표시
+          if (qrData.oncePer && (qrData.usedBy || []).includes(nickname)) {
+            showResult(false, '이미 결제한 QR이에요. (1인 1회 제한)');
+            return;
+          }
+          resultEl.style.display = 'none';
+          showPayConfirm(qrData);
+
+        } else if (qrData.type === 'quiz') {
           resultEl.style.display = 'none';
           currentQRCode = qrData;
 
@@ -613,6 +645,81 @@
       });
     }
 
+    // ── 💳 포인트 결제 ──────────────────────────────
+    let _payQR = null;
+    let _paying = false;
+
+    async function showPayConfirm(qrData) {
+      _payQR = qrData;
+      const amount = qrData.points || 0;
+      let myPts = 0;
+      try { myPts = (await db.collection('participants').doc(nickname).get()).data()?.points || 0; } catch(e) {}
+
+      document.getElementById('pay-emoji').textContent  = qrData.emoji || '💳';
+      document.getElementById('pay-label').textContent  = qrData.label || '포인트 결제';
+      document.getElementById('pay-amount').textContent = `⭐ ${amount}점`;
+      document.getElementById('pay-mypts').textContent  = myPts;
+      const after = myPts - amount;
+      const afterEl = document.getElementById('pay-after');
+      afterEl.textContent = after < 0 ? '포인트 부족' : `⭐ ${after}점`;
+      afterEl.style.color = after < 0 ? '#ef4444' : '#15803d';
+
+      const btn = document.getElementById('pay-confirm-btn');
+      btn.disabled = after < 0;
+      btn.textContent = after < 0 ? '포인트 부족' : '💳 결제하기';
+
+      document.getElementById('pay-confirm-wrap').style.display = 'block';
+    }
+
+    function cancelPay() {
+      _payQR = null;
+      document.getElementById('pay-confirm-wrap').style.display = 'none';
+      resetScanner();
+    }
+
+    async function confirmPay() {
+      if (!_payQR || _paying) return;
+      _paying = true;
+      const qr = _payQR;
+      const amount = qr.points || 0;
+      const btn = document.getElementById('pay-confirm-btn');
+      btn.disabled = true; btn.textContent = '결제 중...';
+
+      try {
+        let newBalance = 0;
+        await db.runTransaction(async tx => {
+          const pRef = db.collection('participants').doc(nickname);
+          const qRef = db.collection('qrcodes').doc(qr.id);
+          const [pSnap, qSnap] = await Promise.all([tx.get(pRef), tx.get(qRef)]);
+          if (!qSnap.exists || !qSnap.data().enabled) throw new Error('DISABLED');
+          if (qr.oncePer && (qSnap.data().usedBy || []).includes(nickname)) throw new Error('ALREADY_PAID');
+          const cur = pSnap.data()?.points || 0;
+          if (cur < amount) throw new Error('INSUFFICIENT');
+          newBalance = cur - amount;
+          tx.update(pRef, { points: firebase.firestore.FieldValue.increment(-amount) });
+          if (qr.oncePer) tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
+          // 결제 기록 (트랜잭션 내 생성 → 차감과 원자적)
+          tx.set(db.collection('payments').doc(), {
+            nickname, qrId: qr.id, label: qr.label || '결제',
+            amount, paidAt: new Date().toISOString(),
+          });
+        });
+        document.getElementById('pay-confirm-wrap').style.display = 'none';
+        showResult(true, `✅ 결제 완료! ${qr.label || ''} -${amount}점\n남은 포인트: ⭐ ${newBalance}점`);
+        if (navigator.vibrate) navigator.vibrate(100);
+      } catch(e) {
+        document.getElementById('pay-confirm-wrap').style.display = 'none';
+        if (e.message === 'INSUFFICIENT')  showResult(false, '포인트가 부족해요.');
+        else if (e.message === 'ALREADY_PAID') showResult(false, '이미 결제한 QR이에요. (1인 1회 제한)');
+        else if (e.message === 'DISABLED') showResult(false, '사용이 중지된 결제 QR이에요.');
+        else showResult(false, '결제 중 오류가 발생했어요. 다시 시도해주세요.');
+      } finally {
+        _paying = false;
+        _payQR = null;
+        btn.disabled = false; btn.textContent = '💳 결제하기';
+      }
+    }
+
     function resetScanner() {
       stopQRTimer();
       const resultEl = document.getElementById('qr-result');
@@ -621,9 +728,11 @@
       document.getElementById('qr-quiz-wrap').style.display = 'none';
       document.getElementById('scan-again-wrap').style.display = 'none';
       document.getElementById('hint-box').style.display = 'none';
+      document.getElementById('pay-confirm-wrap').style.display = 'none';
       currentQRCode = null;
       quizAnswered = false;
       qrAttempts = 0;
+      _payQR = null;
       processing = false;
       startScanner();
     }

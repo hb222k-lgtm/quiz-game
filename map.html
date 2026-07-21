@@ -221,10 +221,6 @@
         <span class="nav-icon">📷</span>
         <span class="nav-label">QR 스캔</span>
       </button>
-      <button class="nav-tab" onclick="window.location.href='shop.html'">
-        <span class="nav-icon">🛒</span>
-        <span class="nav-label">상점</span>
-      </button>
       <button class="nav-tab" id="community-btn" onclick="openCommunity('players')" style="position:relative;">
         <span class="nav-icon">👥</span>
         <span class="nav-label">커뮤니티</span>
@@ -371,7 +367,7 @@
     </div>
   </div>
 
-  <!-- 포인트 전송 / 상품 선물 모달 -->
+  <!-- 포인트 전송 모달 -->
   <div id="send-overlay" style="
     display:none; position:fixed; inset:0; z-index:9990;
     background:rgba(0,0,0,0.5); backdrop-filter:blur(3px);"
@@ -384,20 +380,7 @@
     box-shadow:0 -8px 40px rgba(0,0,0,0.18); max-height:85vh; overflow-y:auto;">
     <div style="width:40px; height:4px; background:#e2e8f0; border-radius:2px; margin:0 auto 16px;"></div>
 
-    <!-- 탭 -->
-    <div style="display:flex; gap:8px; margin-bottom:18px; background:#f3f0ff; border-radius:12px; padding:4px;">
-      <button id="stab-points" onclick="switchSendTab('points')" style="
-        flex:1; padding:9px; border:none; border-radius:9px; font-size:14px; font-weight:700;
-        cursor:pointer; font-family:inherit; background:#7c3aed; color:#fff;">
-        💌 포인트 전송
-      </button>
-      <button id="stab-gift" onclick="switchSendTab('gift')" style="
-        flex:1; padding:9px; border:none; border-radius:9px; font-size:14px; font-weight:700;
-        cursor:pointer; font-family:inherit; background:transparent; color:#7c3aed;">
-        🎁 상품 선물
-      </button>
-    </div>
-
+    <h3 style="font-size:17px; font-weight:900; text-align:center; margin-bottom:6px;">💌 포인트 전송</h3>
     <p style="font-size:13px; color:#64748b; text-align:center; margin-bottom:16px;">
       내 포인트: ⭐ <span id="send-my-points">0</span>점
     </p>
@@ -428,30 +411,6 @@
                color:#fff; border:none; border-radius:14px; font-size:16px; font-weight:800;
                cursor:pointer; font-family:inherit;">
         보내기 💌
-      </button>
-    </div>
-
-    <!-- ── 상품 선물 탭 ── -->
-    <div id="send-tab-gift" style="display:none;">
-      <div style="margin-bottom:14px;">
-        <label style="font-size:13px; font-weight:700; color:#374151; display:block; margin-bottom:6px;">받는 사람 닉네임</label>
-        <input id="gift-to" type="text" placeholder="닉네임 입력"
-          style="width:100%; box-sizing:border-box; padding:13px 14px; font-size:16px;
-                 border:2px solid #e2e8f0; border-radius:12px; outline:none; font-family:inherit;"
-          oninput="onGiftNicknameInput()"
-          onfocus="this.style.borderColor='#7c3aed'"
-          onblur="this.style.borderColor='#e2e8f0'">
-        <div id="gift-to-status" style="font-size:12px; margin-top:5px; min-height:18px;"></div>
-      </div>
-      <div style="font-size:13px; font-weight:700; color:#374151; margin-bottom:10px;">선물할 상품 선택</div>
-      <div id="gift-items-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
-        <div style="text-align:center; color:#94a3b8; font-size:13px; padding:16px;">상품 불러오는 중...</div>
-      </div>
-      <button id="gift-btn" onclick="doSendGift()" disabled
-        style="width:100%; padding:15px; background:linear-gradient(135deg,#ec4899,#a855f7);
-               color:#fff; border:none; border-radius:14px; font-size:16px; font-weight:800;
-               cursor:pointer; font-family:inherit; opacity:0.5;">
-        🎁 선물하기
       </button>
     </div>
 
@@ -2290,23 +2249,8 @@
     // ── 포인트 전송 ──────────────────────────────
     let _sendNicknameTimer = null;
 
-    // ── 탭 전환 ────────────────────────────────────
-    function switchSendTab(tab) {
-      const isPoints = tab === 'points';
-      document.getElementById('send-tab-points').style.display = isPoints ? '' : 'none';
-      document.getElementById('send-tab-gift').style.display   = isPoints ? 'none' : '';
-      document.getElementById('stab-points').style.background  = isPoints ? '#7c3aed' : 'transparent';
-      document.getElementById('stab-points').style.color       = isPoints ? '#fff' : '#7c3aed';
-      document.getElementById('stab-gift').style.background    = isPoints ? 'transparent' : '#7c3aed';
-      document.getElementById('stab-gift').style.color         = isPoints ? '#7c3aed' : '#fff';
-      if (!isPoints) loadGiftItems();
-    }
-
     function openSendPoints(toNick = '') {
-      switchSendTab('points');
       document.getElementById('send-to').value = toNick;
-      document.getElementById('gift-to').value = toNick;   // 선물 탭도 자동 입력
-      document.getElementById('gift-to-status').textContent = '';
       document.getElementById('send-amount').value = '';
       document.getElementById('send-to-status').textContent = '';
       document.getElementById('send-my-points').textContent = participant.points || 0;
@@ -2325,10 +2269,6 @@
       if (document.activeElement) document.activeElement.blur();
       document.getElementById('send-overlay').style.display = 'none';
       document.getElementById('send-modal').style.display = 'none';
-      // 선물 선택 초기화
-      _selectedGiftItem = null;
-      const giftBtn = document.getElementById('gift-btn');
-      if (giftBtn) { giftBtn.disabled = true; giftBtn.style.opacity = '0.5'; }
       // iOS 키보드 닫힘 후 viewport 복구 (여러 타이밍 재시도)
       const _r = () => { window.scrollTo(0,0); document.documentElement.scrollTop=0; document.body.scrollTop=0; };
       requestAnimationFrame(_r);
@@ -2349,36 +2289,6 @@
       statusEl.style.color = '#94a3b8';
       statusEl.textContent = '확인 중...';
       _sendNicknameTimer = setTimeout(async () => {
-        try {
-          const snap = await db.collection('participants').doc(val).get();
-          if (snap.exists) {
-            statusEl.style.color = '#15803d';
-            statusEl.textContent = `✅ ${val} — ⭐ ${snap.data().points || 0}점 보유`;
-          } else {
-            statusEl.style.color = '#dc2626';
-            statusEl.textContent = '❌ 존재하지 않는 닉네임이에요';
-          }
-        } catch(e) {
-          statusEl.style.color = '#dc2626';
-          statusEl.textContent = '오류가 발생했어요';
-        }
-      }, 500);
-    }
-
-    let _giftNicknameTimer = null;
-    function onGiftNicknameInput() {
-      clearTimeout(_giftNicknameTimer);
-      const val = document.getElementById('gift-to').value.trim();
-      const statusEl = document.getElementById('gift-to-status');
-      if (!val) { statusEl.textContent = ''; return; }
-      if (val === nickname) {
-        statusEl.style.color = '#dc2626';
-        statusEl.textContent = '❌ 자기 자신에게는 선물할 수 없어요';
-        return;
-      }
-      statusEl.style.color = '#94a3b8';
-      statusEl.textContent = '확인 중...';
-      _giftNicknameTimer = setTimeout(async () => {
         try {
           const snap = await db.collection('participants').doc(val).get();
           if (snap.exists) {
@@ -2452,134 +2362,6 @@
       } finally {
         btn.disabled = false;
         btn.textContent = '보내기 💌';
-      }
-    }
-
-    // ── 상품 선물 ────────────────────────────────────
-    let _giftItems = [];
-    let _selectedGiftItem = null;
-
-    async function loadGiftItems() {
-      const el = document.getElementById('gift-items-list');
-      try {
-        const snap = await db.collection('shop_items').get();
-        _giftItems = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(i => i.enabled && i.stock !== 0);
-        if (_giftItems.length === 0) {
-          el.innerHTML = '<div style="text-align:center;color:#94a3b8;font-size:13px;padding:16px;">선물 가능한 상품이 없어요</div>';
-          return;
-        }
-        renderGiftItems();
-      } catch(e) {
-        el.innerHTML = '<div style="text-align:center;color:#94a3b8;font-size:13px;padding:16px;">상품을 불러올 수 없어요</div>';
-      }
-    }
-
-    function renderGiftItems() {
-      const el = document.getElementById('gift-items-list');
-      el.innerHTML = _giftItems.map(item => {
-        const myPts = participant.points || 0;
-        const cantAfford = myPts < item.price;
-        const selected = _selectedGiftItem && _selectedGiftItem.id === item.id;
-        const stockTxt = item.stock < 0 ? '무제한' : `${item.stock}개 남음`;
-        return `<div onclick="${cantAfford ? '' : `selectGiftItem('${escHtml(item.id)}')`}" style="
-          display:flex; align-items:center; gap:12px; padding:12px 14px;
-          border:2px solid ${selected ? '#7c3aed' : (cantAfford ? '#f1f5f9' : '#e2e8f0')};
-          border-radius:14px; cursor:${cantAfford ? 'default' : 'pointer'};
-          background:${selected ? '#faf5ff' : (cantAfford ? '#f8fafc' : '#fff')};
-          opacity:${cantAfford ? '0.5' : '1'}; transition:all 0.15s;">
-          <div style="font-size:28px; flex-shrink:0;">${item.emoji || '🎁'}</div>
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:800; font-size:14px; color:#1e0a38;">${escHtml(item.name)}</div>
-            <div style="font-size:11px; color:#94a3b8; margin-top:2px;">${stockTxt}</div>
-          </div>
-          <div style="font-weight:900; font-size:14px; color:#7c3aed; flex-shrink:0;">⭐ ${item.price}</div>
-          ${selected ? '<div style="font-size:18px;">✅</div>' : ''}
-        </div>`;
-      }).join('');
-    }
-
-    function selectGiftItem(itemId) {
-      const item = _giftItems.find(i => i.id === itemId);
-      if (!item) return;
-      _selectedGiftItem = (_selectedGiftItem && _selectedGiftItem.id === itemId) ? null : item;
-      renderGiftItems();
-      const btn = document.getElementById('gift-btn');
-      btn.disabled = !_selectedGiftItem;
-      btn.style.opacity = _selectedGiftItem ? '1' : '0.5';
-    }
-
-    async function doSendGift() {
-      const toNick = document.getElementById('gift-to').value.trim();
-      const statusEl = document.getElementById('gift-to-status');
-      if (!toNick) { showToast('받는 사람 닉네임을 입력해주세요'); return; }
-      if (toNick === nickname) { showToast('자기 자신에게는 선물할 수 없어요'); return; }
-      if (!_selectedGiftItem) { showToast('선물할 상품을 선택해주세요'); return; }
-
-      const item = _selectedGiftItem;
-      if ((participant.points || 0) < item.price) {
-        showToast(`포인트가 부족해요 (필요: ${item.price}점)`); return;
-      }
-
-      const btn = document.getElementById('gift-btn');
-      btn.disabled = true; btn.textContent = '선물 중...';
-
-      try {
-        // 수신자 확인
-        const toSnap = await db.collection('participants').doc(toNick).get();
-        if (!toSnap.exists) {
-          statusEl.textContent = '❌ 존재하지 않는 닉네임이에요';
-          statusEl.style.color = '#ef4444';
-          btn.disabled = false; btn.textContent = '🎁 선물하기';
-          return;
-        }
-
-        // 트랜잭션으로 재고·포인트 동시 확인 및 차감
-        let finalPrice = item.price;
-        await db.runTransaction(async tx => {
-          const iRef = db.collection('shop_items').doc(item.id);
-          const pRef = db.collection('participants').doc(nickname);
-          const [iSnap, pSnap] = await Promise.all([tx.get(iRef), tx.get(pRef)]);
-          if (!iSnap.exists) throw new Error('상품 없음');
-          finalPrice = iSnap.data().price;
-          const stock = iSnap.data().stock;
-          if (stock === 0) throw new Error('품절');
-          const curPts = pSnap.data()?.points || 0;
-          if (curPts < finalPrice) throw new Error('포인트 부족');
-          tx.update(pRef, { points: firebase.firestore.FieldValue.increment(-finalPrice) });
-          if (stock > 0) tx.update(iRef, { stock: firebase.firestore.FieldValue.increment(-1) });
-        });
-        const price = finalPrice;
-
-        // 주문 등록 (수신자 이름으로) — 실패 시 2초 후 재시도
-        const orderData = {
-          nickname:    toNick,
-          giftFrom:    nickname,
-          isGift:      true,
-          itemId:      item.id,
-          itemName:    item.name,
-          emoji:       item.emoji || '🎁',
-          price:       price,
-          confirmed:   false,
-          purchasedAt: new Date().toISOString(),
-        };
-        try {
-          await db.collection('orders').add(orderData);
-        } catch (_) {
-          setTimeout(() => db.collection('orders').add(orderData).catch(() => {}), 2000);
-        }
-
-        _selectedGiftItem = null;
-        closeSendPoints();
-        showToast(`🎁 ${toNick}님에게 ${item.name}을(를) 선물했어요!`);
-      } catch(e) {
-        showToast(e.message === '포인트 부족' ? '포인트가 부족해요' :
-                  e.message === '품절' ? '이미 품절된 상품이에요' :
-                  '오류가 발생했어요. 다시 시도해주세요.');
-      } finally {
-        btn.disabled = false; btn.textContent = '🎁 선물하기';
-        btn.style.opacity = _selectedGiftItem ? '1' : '0.5';
       }
     }
 
