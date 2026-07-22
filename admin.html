@@ -786,6 +786,10 @@
           <input type="radio" name="qr-type" value="pay" onchange="toggleQRType('pay')" style="display:none">
           💳<span>포인트 결제</span>
         </label>
+        <label class="qr-type-btn" id="qropt-team_pay">
+          <input type="radio" name="qr-type" value="team_pay" onchange="toggleQRType('team_pay')" style="display:none">
+          🧑‍🤝‍🧑<span>팀 결제</span>
+        </label>
       </div>
     </div>
 
@@ -837,6 +841,15 @@
         <input type="checkbox" id="qr-pay-once" style="width:18px; height:18px; accent-color:#7c3aed;">
         1인 1회만 결제 가능 <span style="color:#94a3b8; font-weight:400;">(체크 안 하면 반복 결제 가능)</span>
       </label>
+    </div>
+
+    <!-- 🧑‍🤝‍🧑 팀 결제 섹션 -->
+    <div id="qr-team-pay-section" style="display:none;">
+      <div style="background:#e0f2fe; border:1.5px solid #7dd3fc; border-radius:10px; padding:12px; margin-bottom:12px; font-size:13px; color:#0369a1; line-height:1.7;">
+        🧑‍🤝‍🧑 <b>야식·단체 상품용!</b> 팀장이 스캔하면 <b>결제 시점 팀원 수로 나눈 1/n 금액</b>이 팀원 전원에게 자동 차감돼요.<br>
+        👑 팀장은 <b>팀 탭 → 팀 수정 → 팀장 닉네임</b>에서 지정해요 (팀장 미지정 팀은 아무나 결제 가능).<br>
+        ✅ 팀당 1회만 결제되고, 포인트 부족한 팀원이 있으면 결제가 막혀요.
+      </div>
     </div>
 
     <!-- 힌트 체인 -->
@@ -2206,9 +2219,10 @@ function openPrintWindow(codes) {
     nothing: ()  => `💨 꽝`,
     quiz:    (p) => `❓ 퀴즈 +${p}점`,
     pay:     (p) => `💳 결제 ${p}점`,
+    team_pay:(p) => `🧑‍🤝‍🧑 팀 결제 ${p}점 (1/n)`,
   };
   const TYPE_COLOR = {
-    pay:'#0f766e',
+    pay:'#0f766e', team_pay:'#0369a1',
     points:'#15803d', minus:'#dc2626', double:'#7c3aed',
     half:'#ea580c',   nothing:'#64748b', quiz:'#6d28d9',
   };
@@ -2267,6 +2281,7 @@ const QR_TYPE_INFO = {
   quiz:         { label: '❓ 퀴즈',    color: '#6d28d9', bg: '#ede9fe' },
   team_mission: { label: '🤝 팀 미션', color: '#0369a1', bg: '#e0f2fe' },
   pay:          { label: '💳 결제',    color: '#0f766e', bg: '#ccfbf1' },
+  team_pay:     { label: '🧑‍🤝‍🧑 팀 결제', color: '#0369a1', bg: '#e0f2fe' },
 };
 
 const QR_EFFECT_DESC = {
@@ -2277,17 +2292,19 @@ const QR_EFFECT_DESC = {
 
 function toggleQRType(type) {
   // 버튼 스타일 갱신
-  ['points','minus','double','half','nothing','quiz','team_mission','pay'].forEach(t => {
+  ['points','minus','double','half','nothing','quiz','team_mission','pay','team_pay'].forEach(t => {
     document.getElementById('qropt-' + t)?.classList.toggle('active', t === type);
   });
   // 섹션 표시
-  const showAmount = type === 'points' || type === 'minus' || type === 'pay';
+  const showAmount = type === 'points' || type === 'minus' || type === 'pay' || type === 'team_pay';
   document.getElementById('qr-amount-section').style.display = showAmount ? 'block' : 'none';
   document.getElementById('qr-amount-label').textContent =
-    type === 'minus' ? '차감 포인트' : type === 'pay' ? '결제 금액 (점)' : '지급 포인트';
+    type === 'minus' ? '차감 포인트' : type === 'pay' ? '결제 금액 (점)' :
+    type === 'team_pay' ? '총 결제 금액 (팀 전체 합산)' : '지급 포인트';
   document.getElementById('qr-quiz-section').style.display = type === 'quiz' ? 'block' : 'none';
   document.getElementById('qr-team-mission-section').style.display = type === 'team_mission' ? 'block' : 'none';
   document.getElementById('qr-pay-section').style.display = type === 'pay' ? 'block' : 'none';
+  document.getElementById('qr-team-pay-section').style.display = type === 'team_pay' ? 'block' : 'none';
   const effectInfo = QR_EFFECT_DESC[type];
   const effectEl = document.getElementById('qr-effect-section');
   if (effectInfo) {
@@ -2339,6 +2356,9 @@ async function generateQR() {
     const points = parseInt(document.getElementById('qr-points').value) || 100;
     const oncePer = document.getElementById('qr-pay-once').checked;
     data = { label, type: 'pay', points, oncePer, enabled: true, usedBy: [] };
+  } else if (type === 'team_pay') {
+    const points = parseInt(document.getElementById('qr-points').value) || 500;
+    data = { label, type: 'team_pay', points, enabled: true, usedBy: [], paidTeams: [] };
   } else {
     // double / half / nothing — 포인트 필드 없음
     data = { label, type, enabled: true, usedBy: [] };
@@ -2391,6 +2411,8 @@ function showQRImage(id) {
   } else if (qr.type === 'pay') {
     document.getElementById('qr-points').value = qr.points || 100;
     document.getElementById('qr-pay-once').checked = !!qr.oncePer;
+  } else if (qr.type === 'team_pay') {
+    document.getElementById('qr-points').value = qr.points || 500;
   }
   document.getElementById('qr-hint').value = qr.hint || '';
   // datetime-local은 "YYYY-MM-DDTHH:MM" 형식(16자)만 허용
@@ -2598,16 +2620,21 @@ function renderPayments() {
     el.innerHTML = '<p class="text-muted text-center" style="padding:24px; font-size:13px;">아직 결제 내역이 없어요</p>';
     return;
   }
-  el.innerHTML = paymentsData.map(p => `
+  el.innerHTML = paymentsData.map(p => {
+    const teamBadge = p.teamOrder
+      ? `<span style="font-size:11px; background:#e0f2fe; color:#0369a1; padding:1px 8px; border-radius:8px; font-weight:700; margin-left:5px;">🧑‍🤝‍🧑 ${escHtml(p.teamName || '팀')} ${p.memberCount}명 · 1인당 ${p.perCost}점</span>`
+      : '';
+    return `
     <div class="rank-row" style="margin-bottom:8px;">
-      <div style="font-size:24px; margin-right:10px; flex-shrink:0;">💳</div>
+      <div style="font-size:24px; margin-right:10px; flex-shrink:0;">${p.teamOrder ? '🧑‍🤝‍🧑' : '💳'}</div>
       <div class="rank-info" style="flex:1; min-width:0;">
-        <div class="rank-name">${escHtml(p.nickname)}</div>
+        <div class="rank-name">${escHtml(p.nickname)}${teamBadge}</div>
         <div class="rank-detail">${escHtml(p.label || '결제')}</div>
         <div style="font-size:11px; color:#94a3b8;">${p.paidAt ? new Date(p.paidAt).toLocaleString('ko-KR') : ''}</div>
       </div>
-      <div style="font-weight:900; color:#0f766e; flex-shrink:0;">-${p.amount || 0}점</div>
-    </div>`).join('');
+      <div style="font-weight:900; color:${p.teamOrder ? '#0369a1' : '#0f766e'}; flex-shrink:0;">-${p.amount || 0}점</div>
+    </div>`;
+  }).join('');
 }
 
 // ── 포인트 지급 모달 ──────────────────────────

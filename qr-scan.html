@@ -111,13 +111,14 @@
         <div style="font-size:44px; margin-bottom:8px;" id="pay-emoji">💳</div>
         <div id="pay-label" style="font-size:18px; font-weight:900; margin-bottom:4px;"></div>
         <div style="font-size:13px; color:#94a3b8; margin-bottom:14px;">포인트로 결제할까요?</div>
+        <div id="pay-team-line" style="display:none; background:#e0f2fe; border:1.5px solid #7dd3fc; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:13px; font-weight:700; color:#0369a1; line-height:1.6;"></div>
         <div style="background:#f5f3ff; border-radius:14px; padding:14px 16px; margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-            <span style="font-size:13px; color:#64748b; font-weight:600;">결제 금액</span>
+            <span id="pay-amount-label" style="font-size:13px; color:#64748b; font-weight:600;">결제 금액</span>
             <span id="pay-amount" style="font-size:16px; font-weight:900; color:#7c3aed;"></span>
           </div>
           <div style="display:flex; justify-content:space-between;">
-            <span style="font-size:13px; color:#64748b; font-weight:600;">결제 후 잔액</span>
+            <span id="pay-after-label" style="font-size:13px; color:#64748b; font-weight:600;">결제 후 잔액</span>
             <span id="pay-after" style="font-size:14px; font-weight:800;"></span>
           </div>
         </div>
@@ -239,8 +240,8 @@
           return;
         }
 
-        // 💳 결제 QR은 반복 사용 가능 (1인 1회 옵션은 자체 체크)
-        if (qrData.type !== 'pay' && (qrData.usedBy || []).includes(nickname)) {
+        // 💳 결제/팀 결제 QR은 개인 usedBy 체크 안 함 (자체 규칙 사용)
+        if (qrData.type !== 'pay' && qrData.type !== 'team_pay' && (qrData.usedBy || []).includes(nickname)) {
           showResult(false, '이미 스캔한 QR 코드예요.');
           return;
         }
@@ -253,6 +254,11 @@
           }
           resultEl.style.display = 'none';
           showPayConfirm(qrData);
+
+        } else if (qrData.type === 'team_pay') {
+          // 🧑‍🤝‍🧑 팀 결제 — 팀장이 스캔하면 팀원 전체 1/n 차감
+          resultEl.style.display = 'none';
+          await showTeamPayConfirm(qrData);
 
         } else if (qrData.type === 'quiz') {
           resultEl.style.display = 'none';
@@ -645,16 +651,21 @@
       });
     }
 
-    // ── 💳 포인트 결제 ──────────────────────────────
+    // ── 💳 포인트 결제 / 🧑‍🤝‍🧑 팀 결제 ──────────────
     let _payQR = null;
+    let _payTeamCtx = null; // 팀 결제 컨텍스트 {teamId, teamName, count, per}
     let _paying = false;
 
     async function showPayConfirm(qrData) {
       _payQR = qrData;
+      _payTeamCtx = null;
       const amount = qrData.points || 0;
       let myPts = 0;
       try { myPts = (await db.collection('participants').doc(nickname).get()).data()?.points || 0; } catch(e) {}
 
+      document.getElementById('pay-team-line').style.display = 'none';
+      document.getElementById('pay-amount-label').textContent = '결제 금액';
+      document.getElementById('pay-after-label').textContent  = '결제 후 잔액';
       document.getElementById('pay-emoji').textContent  = qrData.emoji || '💳';
       document.getElementById('pay-label').textContent  = qrData.label || '포인트 결제';
       document.getElementById('pay-amount').textContent = `⭐ ${amount}점`;
@@ -671,14 +682,69 @@
       document.getElementById('pay-confirm-wrap').style.display = 'block';
     }
 
+    // 🧑‍🤝‍🧑 팀 결제 확인 화면 — 팀장만 가능, 팀당 1회
+    async function showTeamPayConfirm(qrData) {
+      const total = qrData.points || 0;
+      // 내 팀 확인
+      let myTeam = null, myPts = 0;
+      try {
+        const p = (await db.collection('participants').doc(nickname).get()).data();
+        myTeam = p?.team || null; myPts = p?.points || 0;
+      } catch(e) {}
+      if (!myTeam) { showResult(false, '팀에 속해 있어야 팀 결제를 할 수 있어요.\n커뮤니티 → 팀순위에서 팀에 참여해주세요.'); return; }
+
+      // 팀 설정 + 팀장 확인
+      const tm = (await db.collection('config').doc('teamMode').get()).data();
+      const team = (tm?.teams || []).find(t => t.id === myTeam);
+      if (!tm?.enabled || !team) { showResult(false, '팀 게임이 활성화되지 않았어요.'); return; }
+      if ((qrData.paidTeams || []).includes(myTeam)) {
+        showResult(false, `${team.emoji || '🏆'} ${team.name} 팀은 이미 결제했어요!`);
+        return;
+      }
+      if (team.leader && team.leader !== nickname) {
+        showResult(false, `👑 팀장만 결제할 수 있어요.\n(${team.name} 팀장: ${team.leader})`);
+        return;
+      }
+
+      // 팀원 수 조회 → 1/n 계산
+      const membersSnap = await db.collection('participants').where('team', '==', myTeam).get();
+      const count = membersSnap.size || 1;
+      const per = Math.ceil(total / count);
+      _payQR = qrData;
+      _payTeamCtx = { teamId: myTeam, teamName: team.name, teamEmoji: team.emoji || '🏆', count, per };
+
+      const teamLine = document.getElementById('pay-team-line');
+      teamLine.style.display = 'block';
+      teamLine.innerHTML = `${team.emoji || '🏆'} <b>${escHtml(team.name)}</b> 팀 ${count}명 · 1인당 ⭐ ${per}점<br>` +
+        `<span style="font-weight:600; opacity:.85;">팀원 전원에게 각 ${per}점씩 차감돼요</span>`;
+      document.getElementById('pay-amount-label').textContent = '총 결제 금액';
+      document.getElementById('pay-after-label').textContent  = '내 결제 후 잔액';
+      document.getElementById('pay-emoji').textContent  = qrData.emoji || '🧑‍🤝‍🧑';
+      document.getElementById('pay-label').textContent  = qrData.label || '팀 결제';
+      document.getElementById('pay-amount').textContent = `⭐ ${total}점`;
+      document.getElementById('pay-mypts').textContent  = myPts;
+      const after = myPts - per;
+      const afterEl = document.getElementById('pay-after');
+      afterEl.textContent = after < 0 ? '포인트 부족' : `⭐ ${after}점`;
+      afterEl.style.color = after < 0 ? '#ef4444' : '#15803d';
+
+      const btn = document.getElementById('pay-confirm-btn');
+      btn.disabled = after < 0;
+      btn.textContent = after < 0 ? '내 포인트 부족' : `🧑‍🤝‍🧑 팀 전체 결제하기`;
+
+      document.getElementById('pay-confirm-wrap').style.display = 'block';
+    }
+
     function cancelPay() {
       _payQR = null;
+      _payTeamCtx = null;
       document.getElementById('pay-confirm-wrap').style.display = 'none';
       resetScanner();
     }
 
     async function confirmPay() {
       if (!_payQR || _paying) return;
+      if (_payTeamCtx) { await confirmTeamPay(); return; }
       _paying = true;
       const qr = _payQR;
       const amount = qr.points || 0;
@@ -720,6 +786,65 @@
       }
     }
 
+    // 🧑‍🤝‍🧑 팀 결제 실행 — 팀원 전원 1/n 차감 (원자적)
+    async function confirmTeamPay() {
+      if (!_payQR || !_payTeamCtx || _paying) return;
+      _paying = true;
+      const qr = _payQR;
+      const ctx = _payTeamCtx;
+      const total = qr.points || 0;
+      const btn = document.getElementById('pay-confirm-btn');
+      btn.disabled = true; btn.textContent = '팀 결제 중...';
+
+      try {
+        // 최신 팀원 목록 재조회 (결제 시점 기준 1/n)
+        const membersSnap = await db.collection('participants').where('team', '==', ctx.teamId).get();
+        const memberRefs = membersSnap.docs.map(d => d.ref);
+        const count = memberRefs.length;
+        if (!count) throw new Error('NO_MEMBERS');
+        const per = Math.ceil(total / count);
+
+        await db.runTransaction(async tx => {
+          const qRef = db.collection('qrcodes').doc(qr.id);
+          const [qSnap, ...memberSnaps] = await Promise.all([tx.get(qRef), ...memberRefs.map(r => tx.get(r))]);
+          if (!qSnap.exists || !qSnap.data().enabled) throw new Error('DISABLED');
+          if ((qSnap.data().paidTeams || []).includes(ctx.teamId)) throw new Error('TEAM_PAID');
+
+          // 포인트 부족 팀원 확인
+          const poor = memberSnaps.find(s => (s.data()?.points || 0) < per);
+          if (poor) throw new Error('POOR:' + (poor.data()?.nickname || poor.id));
+
+          // 전원 차감 + 팀 결제 기록
+          memberSnaps.forEach(s => tx.update(s.ref, { points: firebase.firestore.FieldValue.increment(-per) }));
+          tx.update(qRef, { paidTeams: firebase.firestore.FieldValue.arrayUnion(ctx.teamId) });
+          tx.set(db.collection('payments').doc(), {
+            nickname, qrId: qr.id, label: qr.label || '팀 결제',
+            amount: total, teamOrder: true,
+            teamId: ctx.teamId, teamName: ctx.teamName,
+            memberCount: count, perCost: per,
+            paidAt: new Date().toISOString(),
+          });
+        });
+
+        document.getElementById('pay-confirm-wrap').style.display = 'none';
+        showResult(true, `🎉 ${ctx.teamEmoji} ${ctx.teamName} 팀 결제 완료!\n${qr.label || ''} 총 ${total}점 · ${count}명이 각 ${per}점씩 냈어요`);
+        if (navigator.vibrate) navigator.vibrate([100, 60, 100]);
+      } catch(e) {
+        document.getElementById('pay-confirm-wrap').style.display = 'none';
+        const msg = e.message || '';
+        if (msg.startsWith('POOR:'))       showResult(false, `😢 ${msg.slice(5)}님 포인트가 부족해서 결제할 수 없어요.\n(1인당 필요: ${Math.ceil(total / (ctx.count || 1))}점)`);
+        else if (msg === 'TEAM_PAID')      showResult(false, '우리 팀은 이미 결제했어요!');
+        else if (msg === 'DISABLED')       showResult(false, '사용이 중지된 결제 QR이에요.');
+        else if (msg === 'NO_MEMBERS')     showResult(false, '팀원이 없어요.');
+        else showResult(false, '팀 결제 중 오류가 발생했어요. 다시 시도해주세요.');
+      } finally {
+        _paying = false;
+        _payQR = null;
+        _payTeamCtx = null;
+        btn.disabled = false; btn.textContent = '💳 결제하기';
+      }
+    }
+
     function resetScanner() {
       stopQRTimer();
       const resultEl = document.getElementById('qr-result');
@@ -733,6 +858,7 @@
       quizAnswered = false;
       qrAttempts = 0;
       _payQR = null;
+      _payTeamCtx = null;
       processing = false;
       startScanner();
     }
