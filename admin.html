@@ -163,7 +163,18 @@
           <h3 style="font-weight:700;">🔄 참가자 팀 재배정</h3>
           <button class="btn btn-outline btn-sm" onclick="loadAssignmentList()" style="font-size:12px;">불러오기</button>
         </div>
-        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">참가자 개별로 팀을 변경할 수 있어요.</p>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">참가자를 <b>탭해서 여러 명 선택</b> → 아래에서 팀을 골라 한 번에 배정해요. (오른쪽 드롭다운으로 개별 변경도 가능)</p>
+
+        <!-- 일괄 배정 툴바 -->
+        <div id="asg-bulk-bar" style="display:none; align-items:center; gap:8px; flex-wrap:wrap; background:#f5f3ff; border:1.5px solid #c4b5fd; border-radius:12px; padding:10px 12px; margin-bottom:10px; position:sticky; top:0; z-index:5;">
+          <button class="btn btn-sm" style="background:#ede9fe; color:#6d28d9; border:1.5px solid #c4b5fd; white-space:nowrap;" onclick="asgSelectAll()">전체 선택</button>
+          <button class="btn btn-sm" style="background:#f1f5f9; color:#64748b; border:1.5px solid #cbd5e1; white-space:nowrap;" onclick="asgClearSelection()">해제</button>
+          <span id="asg-selected-count" style="font-size:13px; font-weight:800; color:#6d28d9;">0명 선택</span>
+          <div style="flex:1; min-width:120px;"></div>
+          <select id="asg-bulk-team" style="padding:8px 10px; border:1.5px solid #c4b5fd; border-radius:9px; font-size:13px; font-weight:700; outline:none; cursor:pointer;"></select>
+          <button class="btn btn-sm" id="asg-apply-btn" style="background:#7c3aed; color:#fff; white-space:nowrap;" onclick="asgApplyBulk()">➡️ 이 팀으로 배정</button>
+        </div>
+
         <div id="team-assignment-list">
           <p style="font-size:13px; color:#94a3b8; text-align:center; padding:16px;">위 "불러오기" 버튼을 눌러주세요</p>
         </div>
@@ -1185,6 +1196,9 @@ async function loadTeamStandings() {
   } catch(e) { el.innerHTML = '<p style="color:#ef4444;font-size:13px;">오류 발생</p>'; }
 }
 
+let _asgSelected = new Set();   // 일괄 배정용 선택된 닉네임
+let _asgNicknames = [];         // 현재 목록의 전체 닉네임
+
 async function loadAssignmentList() {
   const el = document.getElementById('team-assignment-list');
   if (!el) return;
@@ -1192,25 +1206,110 @@ async function loadAssignmentList() {
   try {
     const pSnap = await db.collection('participants').orderBy('points', 'desc').get();
     const teams = _teamModeData.teams || [];
-    if (!teams.length) { el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;">팀을 먼저 추가해주세요</p>'; return; }
-    const teamOptions = teams.map(t =>
-      `<option value="${escHtml(t.id)}">${t.emoji||''} ${escHtml(t.name)}</option>`
-    ).join('');
+    if (!teams.length) {
+      el.innerHTML = '<p style="font-size:13px;color:#94a3b8;text-align:center;">팀을 먼저 추가해주세요</p>';
+      document.getElementById('asg-bulk-bar').style.display = 'none';
+      return;
+    }
+    _asgNicknames = pSnap.docs.map(d => d.id);
+    _asgSelected.clear();
+
+    // 일괄 배정 팀 드롭다운 채우기
+    const bulkSel = document.getElementById('asg-bulk-team');
+    bulkSel.innerHTML = teams.map(t => `<option value="${t.id}">${t.emoji||''} ${escHtml(t.name)}</option>`).join('')
+      + `<option value="">🚫 팀 없음</option>`;
+    document.getElementById('asg-bulk-bar').style.display = 'flex';
+
+    const teamMap = {}; teams.forEach(t => teamMap[t.id] = t);
     el.innerHTML = pSnap.docs.map(d => {
       const p = d.data();
       const myTeam = p.team || '';
+      const curTeam = teamMap[myTeam];
+      const badge = curTeam
+        ? `<span style="font-size:11px;font-weight:700;color:#fff;background:${curTeam.color||'#7c3aed'};border-radius:7px;padding:1px 7px;">${curTeam.emoji||''}${escHtml(curTeam.name)}</span>`
+        : `<span style="font-size:11px;font-weight:600;color:#94a3b8;background:#f1f5f9;border-radius:7px;padding:1px 7px;">팀 없음</span>`;
       const opts = `<option value="">팀 없음</option>` + teams.map(t =>
         `<option value="${t.id}" ${t.id===myTeam?'selected':''}>${t.emoji||''} ${t.name}</option>`
       ).join('');
-      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
-        <div style="flex:1;font-size:14px;font-weight:700;color:#1e293b;">${escHtml(d.id)}<span style="font-size:12px;color:#94a3b8;font-weight:400;margin-left:6px;">${p.points||0}점</span></div>
-        <select onchange="assignTeam('${escHtml(d.id)}',this.value)"
-          style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:700;outline:none;cursor:pointer;">
+      return `<div class="asg-row" data-nick="${escHtml(d.id)}" onclick="asgToggleSelect(event,'${escHtml(d.id)}')"
+        style="display:flex;align-items:center;gap:10px;padding:9px 8px;border-bottom:1px solid #f1f5f9;border-radius:8px;cursor:pointer;transition:background 0.12s;">
+        <span class="asg-check" style="width:22px;height:22px;border:2px solid #cbd5e1;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;">​</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:700;color:#1e293b;">${escHtml(d.id)}<span style="font-size:12px;color:#94a3b8;font-weight:400;margin-left:6px;">${p.points||0}점</span></div>
+          <div style="margin-top:2px;">${badge}</div>
+        </div>
+        <select onclick="event.stopPropagation()" onchange="assignTeam('${escHtml(d.id)}',this.value)"
+          style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-weight:700;outline:none;cursor:pointer;flex-shrink:0;">
           ${opts}
         </select>
       </div>`;
     }).join('');
+    _asgUpdateUI();
   } catch(e) { el.innerHTML = '<p style="color:#ef4444;font-size:13px;">오류 발생</p>'; }
+}
+
+function asgToggleSelect(ev, nick) {
+  if (_asgSelected.has(nick)) _asgSelected.delete(nick);
+  else _asgSelected.add(nick);
+  _asgUpdateUI();
+}
+
+function asgSelectAll() {
+  _asgNicknames.forEach(n => _asgSelected.add(n));
+  _asgUpdateUI();
+}
+
+function asgClearSelection() {
+  _asgSelected.clear();
+  _asgUpdateUI();
+}
+
+function _asgUpdateUI() {
+  document.querySelectorAll('.asg-row').forEach(row => {
+    const nick = row.dataset.nick;
+    const on = _asgSelected.has(nick);
+    const chk = row.querySelector('.asg-check');
+    row.style.background = on ? '#f5f3ff' : '';
+    if (chk) {
+      chk.style.background = on ? '#7c3aed' : '#fff';
+      chk.style.borderColor = on ? '#7c3aed' : '#cbd5e1';
+      chk.textContent = on ? '✓' : '​';
+    }
+  });
+  const cnt = document.getElementById('asg-selected-count');
+  if (cnt) cnt.textContent = `${_asgSelected.size}명 선택`;
+  const applyBtn = document.getElementById('asg-apply-btn');
+  if (applyBtn) applyBtn.disabled = _asgSelected.size === 0;
+}
+
+async function asgApplyBulk() {
+  if (!_asgSelected.size) { showToast('참가자를 먼저 선택해주세요'); return; }
+  const teamId = document.getElementById('asg-bulk-team').value;
+  const team = (_teamModeData.teams||[]).find(t => t.id === teamId);
+  const teamLabel = team ? `${team.emoji||''} ${team.name}` : '팀 없음';
+  const nicks = [..._asgSelected];
+  if (!confirm(`선택한 ${nicks.length}명을 "${teamLabel}"(으)로 배정할까요?`)) return;
+
+  const applyBtn = document.getElementById('asg-apply-btn');
+  applyBtn.disabled = true; applyBtn.textContent = '배정 중...';
+  try {
+    const chunkSize = 400;
+    for (let i = 0; i < nicks.length; i += chunkSize) {
+      const batch = db.batch();
+      nicks.slice(i, i + chunkSize).forEach(n =>
+        batch.update(db.collection('participants').doc(n), {
+          team: teamId || firebase.firestore.FieldValue.delete()
+        }));
+      await batch.commit();
+    }
+    showToast(`✅ ${nicks.length}명을 ${teamLabel}(으)로 배정했어요`);
+    _asgSelected.clear();
+    loadAssignmentList(); // 최신 상태 재렌더
+  } catch(e) {
+    showToast('일괄 배정 실패: ' + e.message);
+    applyBtn.disabled = false;
+  }
+  applyBtn.textContent = '➡️ 이 팀으로 배정';
 }
 
 async function assignTeam(nickname, teamId) {
