@@ -238,6 +238,21 @@
         <button class="btn btn-primary" onclick="location.href='add-location.html'">+ 장소 추가</button>
         <button class="btn btn-danger" style="margin-left:auto;" onclick="deleteAllLocations()">🗑 전체 삭제</button>
       </div>
+
+      <!-- 전체 켜기/끄기 -->
+      <div class="card" style="margin-bottom:10px; padding:14px 16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <div style="font-size:13px; font-weight:700; color:#374151;">
+            🗺️ 전체 장소 표시 <span id="loc-onoff-status" style="font-weight:600; color:#94a3b8;"></span>
+            <div style="font-size:11px; color:#94a3b8; font-weight:400; margin-top:2px;">시간 설정은 그대로 두고, 지도 노출만 한 번에 켜고 꺼요</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm" style="background:#dcfce7; color:#15803d; border:1.5px solid #86efac;" onclick="setAllLocations(true)">✅ 전체 켜기</button>
+            <button class="btn btn-sm" style="background:#f1f5f9; color:#64748b; border:1.5px solid #cbd5e1;" onclick="setAllLocations(false)">⏸ 전체 끄기</button>
+          </div>
+        </div>
+      </div>
+
       <div id="locations-list"></div>
     </div>
 
@@ -1719,6 +1734,9 @@ function listenLocations() {
     locationsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const active = locationsData.filter(l => l.enabled).length;
     document.getElementById('stat-locs').textContent = active;
+    const statusEl = document.getElementById('loc-onoff-status');
+    if (statusEl) statusEl.textContent = locationsData.length
+      ? `— 켜짐 ${active} / 전체 ${locationsData.length}` : '';
     renderLocations();
   });
 }
@@ -2141,6 +2159,25 @@ async function saveLocation() {
 async function toggleLocation(id, enabled) {
   await db.collection('locations').doc(id).update({ enabled });
   showToast(enabled ? '활성화됐어요' : '비활성화됐어요');
+}
+
+// 전체 장소 한 번에 켜기/끄기 (시간 설정은 건드리지 않음)
+async function setAllLocations(enabled) {
+  if (!locationsData.length) { showToast('장소가 없어요'); return; }
+  const targets = locationsData.filter(l => !!l.enabled !== enabled);
+  if (!targets.length) {
+    showToast(enabled ? '이미 전체가 켜져 있어요' : '이미 전체가 꺼져 있어요');
+    return;
+  }
+  if (!confirm(`장소 ${targets.length}곳을 모두 ${enabled ? '켤까요' : '끌까요'}?\n시간 설정은 그대로 유지돼요.`)) return;
+  const chunkSize = 500;
+  for (let i = 0; i < targets.length; i += chunkSize) {
+    const batch = db.batch();
+    targets.slice(i, i + chunkSize).forEach(l =>
+      batch.update(db.collection('locations').doc(l.id), { enabled }));
+    await batch.commit();
+  }
+  showToast(enabled ? `✅ 전체 ${targets.length}곳 켜짐` : `⏸ 전체 ${targets.length}곳 꺼짐`);
 }
 
 async function deleteLocation(id) {
