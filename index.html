@@ -392,10 +392,20 @@
     // ── 게임 기간 체크 ─────────────────────────────
     let _countdownTimer = null;
 
+    // 🎮 게임 이름 적용 (첫 화면 제목 + 브라우저 탭)
+    function applyGameName(d) {
+      const name = (d?.gameName || '').trim();
+      if (!name) return;
+      const h1 = document.querySelector('.hero h1');
+      if (h1) h1.textContent = name;
+      document.title = name;
+    }
+
     async function checkGamePeriod() {
       try {
         const snap = await db.collection('config').doc('gameSettings').get();
         const d = snap.data() || {};
+        applyGameName(d);
         const now = new Date();
         const start = d.startDate?.toDate ? d.startDate.toDate() : null;
         const end   = d.endDate?.toDate   ? d.endDate.toDate()   : null;
