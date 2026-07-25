@@ -272,6 +272,7 @@
         <button class="btn btn-primary" onclick="openQRModal()">+ QR 코드 생성</button>
         <button class="btn btn-outline" onclick="openBulkQRModal()">📦 일괄 생성</button>
         <button class="btn btn-outline" onclick="printAllQR()">🖨️ 전체 인쇄</button>
+        <button class="btn btn-outline" id="qr-save-img-btn" onclick="saveAllQRImages()">🖼️ 이미지 일괄 저장</button>
         <button class="btn btn-danger" style="margin-left:auto;" onclick="deleteAllQRCodes()">🗑 전체 삭제</button>
       </div>
       <div id="qrcodes-list"></div>
@@ -875,9 +876,10 @@
 
     <div class="qr-gen-box" id="qr-gen-result" style="display:none;">
       <div class="divider"></div>
-      <p style="font-size:13px; color:#64748b; margin-bottom:12px;">생성된 QR 코드 (스크린샷으로 저장)</p>
+      <p style="font-size:13px; color:#64748b; margin-bottom:12px;">생성된 QR 코드</p>
       <div id="qr-code-output"></div>
       <p style="font-size:12px; margin-top:8px; color:#94a3b8;" id="qr-code-text"></p>
+      <button class="btn btn-outline" style="margin-top:10px;" onclick="saveOneQRImage()">⬇️ 고화질 이미지 저장</button>
     </div>
   </div>
 </div>
@@ -2271,6 +2273,118 @@ function printAllQR() {
   openPrintWindow(codes);
 }
 
+// ── 🖼️ QR 고화질 이미지 저장 (1200×1440 PNG) ─────
+const _QR_IMG_BADGE = {
+  points:  q => `💰 포인트 +${q.points || 0}점`,
+  minus:   q => `📉 차감 -${q.points || 0}점`,
+  double:  () => '🎰 점수 2배',
+  half:    () => '✂️ 점수 절반',
+  nothing: () => '💨 꽝',
+  quiz:    q => `❓ 퀴즈 +${q.quizPoints || 0}점`,
+  team_mission: q => `🤝 팀 미션 ${q.requiredMembers || 3}명`,
+  pay:     q => `💳 결제 ${q.points || 0}점`,
+  team_pay:q => `🧑‍🤝‍🧑 팀 결제 ${q.points || 0}점 (1/n)`,
+};
+
+async function _renderQRPngBlob(qr) {
+  const base = GAME_CONFIG.SITE_URL + 'qr-scan.html?code=';
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed; left:-99999px; top:0;';
+  document.body.appendChild(holder);
+  new QRCode(holder, { text: base + qr.id, width: 1000, height: 1000,
+    colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+  await new Promise(r => setTimeout(r, 60)); // 렌더 대기
+  const src = holder.querySelector('canvas') || holder.querySelector('img');
+
+  const W = 1200, H = 1440;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(src, 100, 100, 1000, 1000);
+
+  // 라벨 (길면 자동 축소)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#111827';
+  const label = String(qr.label || qr.id);
+  let fs = 72;
+  ctx.font = `bold ${fs}px -apple-system, "Malgun Gothic", sans-serif`;
+  while (ctx.measureText(label).width > 1040 && fs > 32) {
+    fs -= 4;
+    ctx.font = `bold ${fs}px -apple-system, "Malgun Gothic", sans-serif`;
+  }
+  ctx.fillText(label, W / 2, 1225);
+
+  // 타입 배지
+  const badge = (_QR_IMG_BADGE[qr.type] || _QR_IMG_BADGE.points)(qr);
+  ctx.fillStyle = '#6d28d9';
+  ctx.font = 'bold 52px -apple-system, "Malgun Gothic", sans-serif';
+  ctx.fillText(badge, W / 2, 1330);
+
+  holder.remove();
+  return await new Promise(r => c.toBlob(r, 'image/png'));
+}
+
+async function saveAllQRImages() {
+  if (!qrCodesData.length) { showToast('저장할 QR 코드가 없어요'); return; }
+  const btn = document.getElementById('qr-save-img-btn');
+  btn.disabled = true;
+  try {
+    // JSZip 필요 시 로드
+    if (typeof JSZip === 'undefined') {
+      btn.textContent = '준비 중...';
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        s.onload = res;
+        s.onerror = () => rej(new Error('JSZip 로드 실패 — 네트워크 확인'));
+        document.head.appendChild(s);
+      });
+    }
+    const zip = new JSZip();
+    let i = 0;
+    for (const qr of qrCodesData) {
+      i++;
+      btn.textContent = `이미지 생성 중... (${i}/${qrCodesData.length})`;
+      const blob = await _renderQRPngBlob(qr);
+      const safe = String(qr.label || qr.id).replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 40) || qr.id;
+      zip.file(`${String(i).padStart(2, '0')}_${safe}.png`, blob);
+    }
+    btn.textContent = 'ZIP 압축 중...';
+    const zblob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(zblob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `QR코드_${qrCodesData.length}개_고화질.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showToast(`🖼️ QR ${qrCodesData.length}개를 고화질 이미지로 저장했어요!`);
+  } catch (e) {
+    showToast('이미지 저장 실패: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🖼️ 이미지 일괄 저장';
+  }
+}
+
+// 단일 QR 고화질 저장 (생성/보기 화면에서)
+let _lastShownQRCode = null;
+async function saveOneQRImage() {
+  if (!_lastShownQRCode) { showToast('먼저 QR을 생성하거나 선택해주세요'); return; }
+  const qr = qrCodesData.find(q => q.id === _lastShownQRCode)
+    || { id: _lastShownQRCode, label: document.getElementById('qr-label').value.trim() || _lastShownQRCode, type: 'points' };
+  const blob = await _renderQRPngBlob(qr);
+  const safe = String(qr.label || qr.id).replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 40) || qr.id;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `QR_${safe}.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  showToast('🖼️ 고화질 이미지로 저장했어요!');
+}
+
 // ── QR 생성 ───────────────────────────────────────
 const QR_TYPE_INFO = {
   points:  { label: '💰 포인트 지급',  color: '#d97706', bg: '#fef9c3' },
@@ -2389,6 +2503,7 @@ async function generateQR() {
     correctLevel: QRCode.CorrectLevel.H
   });
   document.getElementById('qr-code-text').textContent = `코드: ${code}`;
+  _lastShownQRCode = code;
   showToast('QR 코드가 생성됐어요!');
 }
 
@@ -2428,6 +2543,7 @@ function showQRImage(id) {
       correctLevel: QRCode.CorrectLevel.H
     });
     document.getElementById('qr-code-text').textContent = `코드: ${id}`;
+    _lastShownQRCode = id;
   }, 100);
 }
 
