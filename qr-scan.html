@@ -290,13 +290,15 @@
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             const pSnap = await tx.get(pRef);
             const cur = pSnap.data()?.points || 0;
+            const curEarned = pSnap.data()?.earnedPoints || 0;
             const deduct = qrData.points || 0;
             const newPts = Math.max(0, cur - deduct);
-            tx.update(pRef, { points: newPts, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
+            const newEarned = Math.max(0, curEarned - deduct); // 순위(누적)도 차감 → 진짜 페널티
+            tx.update(pRef, { points: newPts, earnedPoints: newEarned, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
-            return { deducted: cur - newPts };
+            return { deducted: deduct, earnedLost: curEarned - newEarned };
           });
-          showResult(false, `😱 ${qrData.label || 'QR'} 스캔! -${res.deducted}점... 다음엔 잘 골라요!`);
+          showResult(false, `😱 ${qrData.label || 'QR'} 스캔! 순위 점수 -${res.deducted}점... 다음엔 잘 골라요!`);
           showHintBox(qrData.hint);
           checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
