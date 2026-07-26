@@ -834,6 +834,8 @@
     let _gpsRetryTimer = null;
     let _gpsFailCount = 0;      // 연속 실패 횟수 (고정밀 → 저정밀 자동 전환용)
     let _gpsPermDenied = false; // 권한 거부 상태
+    let _lastGoodFix = null;    // 마지막 정상 좌표 {lat, lng, t} — GPS 튐 필터용
+    let _gpsOutlierCount = 0;   // 연속 튐 횟수 (계속되면 실제 이동으로 인정)
 
     // 브라우저/OS별 GPS 허용 안내 문자열 (실제 경로 기준)
     function _gpsGuideText() {
@@ -952,6 +954,24 @@
 
           // 정확도 500m 초과만 무시
           if (accuracy > 500) return;
+
+          // ── GPS 튐(outlier) 필터 ──────────────────
+          // 이전 정상 좌표에서 갑자기 먼 곳으로 튀면(도보로 불가능한 거리) 무시.
+          // 단, 계속 같은 방향으로 튀면 실제 이동으로 보고 인정(4회째 반영).
+          if (_lastGoodFix) {
+            const jump = getDistance(_lastGoodFix.lat, _lastGoodFix.lng, lat, lng);
+            const dt = Math.max(1, (Date.now() - _lastGoodFix.t) / 1000);
+            const maxPlausible = 30 + dt * 12 + accuracy; // 도보 여유 + 오차 허용
+            if (jump > maxPlausible && accuracy > 25) {
+              _gpsOutlierCount++;
+              if (_gpsOutlierCount < 4) {
+                setGPSStatus('bad', `GPS 신호 흔들림 ⚠️`);
+                return; // 일시적 튐 → 지도 유지
+              }
+            }
+          }
+          _gpsOutlierCount = 0;
+          _lastGoodFix = { lat, lng, t: Date.now() };
 
           currentLocation = { lat, lng };
           updateUserMarker(lat, lng, accuracy);
