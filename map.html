@@ -1284,10 +1284,16 @@
       }, 3800);
     }
 
+    // ── 순위 점수 = 누적 획득 점수(earnedPoints) ──────
+    // 포인트를 써도(결제·전송·차감) 순위는 안 바뀜. earnedPoints 없으면 points로 폴백.
+    function rankScore(p) {
+      return (p && (p.earnedPoints ?? p.points)) || 0;
+    }
+
     // ── 동점 방지 순위 비교 ──────────────────────────
-    // 포인트 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
+    // 누적점수 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
     function rankCompare(a, b) {
-      return (b.points || 0) - (a.points || 0)
+      return rankScore(b) - rankScore(a)
         || ((b.completedLocations || []).length) - ((a.completedLocations || []).length)
         || ((b.scannedQRs || []).length) - ((a.scannedQRs || []).length)
         || (a.tbOrder ?? 9999) - (b.tbOrder ?? 9999)
@@ -1304,7 +1310,7 @@
         if (myIdx === -1) return;
 
         const newRank   = myIdx + 1;
-        const newPoints = all[myIdx].points;
+        const newPoints = rankScore(all[myIdx]); // 누적 획득 점수 기준
         const total     = all.length;
 
         // 첫 로드: 초기값만 저장, 알림 없음
@@ -1339,7 +1345,7 @@
 
         // 1등 수성 중 & 2등이 30점 이내로 추격 중 → 위협 알림
         if (newRank === 1 && total >= 2) {
-          const gap = newPoints - (all[1]?.points || 0);
+          const gap = newPoints - rankScore(all[1]);
           if (gap > 0 && gap <= 30 && now >= _rankNotifCooldownUntil) {
             const chaser = all[1].nick;
             setTimeout(() => {
@@ -1699,7 +1705,7 @@
               ${escHtml(p.nick)}${isMe ? ' <span style="font-size:11px;background:#7c3aed;color:#fff;padding:1px 6px;border-radius:6px;">나</span>' : ''}${(p.badges||[]).length ? '<span style="margin-left:4px;font-size:13px;">' + (p.badges||[]).map(b=>ACHIEVEMENTS[b]?.emoji||'').join('') + '</span>' : ''}
             </div>
             <div style="font-size:12px;color:#64748b;margin-top:2px;">
-              완료 ${(p.completedLocations||[]).length}곳 · ⭐ ${p.points || 0}점
+              완료 ${(p.completedLocations||[]).length}곳 · 🏅 누적 ${rankScore(p)}점
             </div>
           </div>
           ${sendBtn}
@@ -2152,7 +2158,7 @@
         const data = d.data();
         const tid  = data.team;
         if (!tid || !(tid in teamPts)) return;
-        teamPts[tid]   += (data.points || 0);
+        teamPts[tid]   += rankScore(data); // 누적 획득 점수 합산
         teamLocs[tid]  += (data.completedLocations || []).length;
         teamScans[tid] += (data.scannedQRs || []).length;
         teamMembers[tid].push({ ...data, nick: d.id, points: data.points || 0 });
@@ -2207,7 +2213,7 @@
         const isMyTeam = team.id === myTeamId;
         const medal = medals[i] || `<span style="font-size:13px;font-weight:800;color:#64748b;">${i+1}</span>`;
         const topMembers = members.slice(0, 3).map(m =>
-          `<span style="font-size:12px;font-weight:700;color:#475569;">${escHtml(m.nick)}: ${m.points}점</span>`
+          `<span style="font-size:12px;font-weight:700;color:#475569;">${escHtml(m.nick)}: ${rankScore(m)}점</span>`
         ).join('<br>');
 
         return `<div style="
@@ -2221,7 +2227,7 @@
               <div style="font-size:16px;font-weight:900;color:${team.color||'#1e293b'};">
                 ${escHtml(team.name)}${isMyTeam ? ' <span style="font-size:11px;background:'+team.color+';color:#fff;padding:1px 7px;border-radius:6px;">우리 팀</span>' : ''}
               </div>
-              <div style="font-size:12px;color:#64748b;margin-top:2px;">${members.length}명 · ⭐ ${pts.toLocaleString()}점</div>
+              <div style="font-size:12px;color:#64748b;margin-top:2px;">${members.length}명 · 🏅 누적 ${pts.toLocaleString()}점</div>
             </div>
           </div>
           ${topMembers ? `<div style="background:rgba(0,0,0,0.04);border-radius:8px;padding:8px 10px;font-size:12px;color:#475569;line-height:1.7;">${topMembers}${members.length > 3 ? `<br><span style="color:#94a3b8;">외 ${members.length-3}명</span>` : ''}</div>` : ''}

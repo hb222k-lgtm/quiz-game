@@ -1180,7 +1180,7 @@ async function loadTeamStandings() {
     pSnap.forEach(d => {
       const tid = d.data()?.team;
       if (tid && tid in teamPts) {
-        teamPts[tid]   += (d.data().points || 0);
+        teamPts[tid]   += rankScore(d.data()); // 누적 획득 점수 합산
         teamLocs[tid]  += (d.data().completedLocations || []).length;
         teamScans[tid] += (d.data().scannedQRs || []).length;
         teamMembers[tid]++;
@@ -1202,7 +1202,7 @@ async function loadTeamStandings() {
           <div style="font-size:14px;font-weight:800;color:${t.color||'#1e293b'};">${escHtml(t.name)}</div>
           <div style="font-size:12px;color:#64748b;">${teamMembers[t.id]}명</div>
         </div>
-        <div style="font-size:18px;font-weight:900;color:${t.color||'#7c3aed'};">⭐ ${(teamPts[t.id]||0).toLocaleString()}</div>
+        <div style="font-size:18px;font-weight:900;color:${t.color||'#7c3aed'};">🏅 ${(teamPts[t.id]||0).toLocaleString()}</div>
       </div>`).join('');
   } catch(e) { el.innerHTML = '<p style="color:#ef4444;font-size:13px;">오류 발생</p>'; }
 }
@@ -1540,13 +1540,13 @@ function initAdmin() {
 let _tbData = null;
 let _tbAutoAdvanceTimer = null;
 
-// 완전 동점 그룹 감지 (포인트·완료 장소·QR 수 모두 동일, 2명 이상)
+// 완전 동점 그룹 감지 (누적점수·완료 장소·QR 수 모두 동일, 2명 이상)
 function tbDetectTies() {
-  const key = p => `${p.points || 0}|${(p.completedLocations || []).length}|${(p.scannedQRs || []).length}`;
+  const key = p => `${rankScore(p)}|${(p.completedLocations || []).length}|${(p.scannedQRs || []).length}`;
   const groups = {};
   participantsData.forEach(p => { const k = key(p); (groups[k] = groups[k] || []).push(p); });
   const tied = Object.values(groups).filter(g => g.length >= 2)
-    .sort((a, b) => (b[0].points || 0) - (a[0].points || 0));
+    .sort((a, b) => rankScore(b[0]) - rankScore(a[0]));
   const box = document.getElementById('tb-tie-groups');
   if (!tied.length) {
     box.innerHTML = '<span style="font-size:12px;color:#94a3b8;">현재 완전 동점 그룹이 없어요 ✅</span>';
@@ -1558,7 +1558,7 @@ function tbDetectTies() {
       onclick="document.getElementById('tb-contestants').value = this.dataset.names"
       style="font-size:12px; padding:5px 10px; background:#fef9c3; border:1.5px solid #fde047;
              border-radius:99px; cursor:pointer; font-weight:700; font-family:inherit;">
-      ⭐${g[0].points || 0}점 동점 ${g.length}명: ${escHtml(names)}</button>`;
+      🏅${rankScore(g[0])}점 동점 ${g.length}명: ${escHtml(names)}</button>`;
   }).join('');
 }
 
@@ -1733,10 +1733,16 @@ function injectAnnounceCard() {
 
 // ── 리더보드 실시간 ───────────────────────────────
 let _leaderboardTimer = null;
+// ── 순위 점수 = 누적 획득 점수(earnedPoints) ──────
+// 포인트를 써도(결제·전송·차감) 순위 안 바뀜. earnedPoints 없으면 points로 폴백.
+function rankScore(p) {
+  return (p && (p.earnedPoints ?? p.points)) || 0;
+}
+
 // ── 동점 방지 순위 비교 ──────────────────────────
-// 포인트 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
+// 누적점수 → 완료 장소 수 → QR 스캔 수 → ⚔️ 결승전 결과 → 닉네임순(표시용)
 function rankCompare(a, b) {
-  return (b.points || 0) - (a.points || 0)
+  return rankScore(b) - rankScore(a)
     || ((b.completedLocations || []).length) - ((a.completedLocations || []).length)
     || ((b.scannedQRs || []).length) - ((a.scannedQRs || []).length)
     || (a.tbOrder ?? 9999) - (b.tbOrder ?? 9999)
@@ -1774,10 +1780,10 @@ function renderLeaderboard(list) {
         <div class="rank-num ${rankClass}">${medal}</div>
         <div class="rank-info">
           <div class="rank-name">${escHtml(p.nickname)}<span style="margin-left:5px;font-size:13px;">${(p.badges||[]).map(b=>ACHIEVEMENTS[b]?.emoji||'').join('')}</span></div>
-          <div class="rank-detail">장소 ${locs}곳 완료 · QR ${qrs}개 스캔</div>
+          <div class="rank-detail">장소 ${locs}곳 · QR ${qrs}개 · 보유 ${p.points || 0}점</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <div class="rank-points">${p.points || 0}점</div>
+          <div class="rank-points" title="누적 획득 점수 (순위 기준)">🏅 ${rankScore(p)}점</div>
           <button class="btn btn-primary btn-sm"
             data-nick="${escHtml(p.nickname)}" data-pts="${p.points || 0}"
             onclick="openGivePointsModal(this.dataset.nick, +this.dataset.pts)">
