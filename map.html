@@ -176,7 +176,12 @@
           <span id="header-team-badge" style="display:none; margin-right:6px; font-weight:800;"></span><span id="header-progress-text"></span>
         </div>
       </div>
-      <div class="points-badge">⭐ <span id="header-points">0</span>점</div>
+      <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end; flex-shrink:0;">
+        <div style="background:linear-gradient(135deg,#a855f7,#7c3aed); color:#fff; padding:4px 12px; border-radius:99px; font-weight:900; font-size:13px; white-space:nowrap; box-shadow:0 2px 8px rgba(124,58,237,0.4);"
+          title="누적 획득 점수 (순위 기준)">🏅 순위 <span id="header-rank-score">0</span>점</div>
+        <div style="background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#451a03; padding:4px 12px; border-radius:99px; font-weight:900; font-size:13px; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.25);"
+          title="지금 쓸 수 있는 포인트">⭐ 보유 <span id="header-points">0</span>점</div>
+      </div>
     </div>
 
     <!-- 골든타임 배너 -->
@@ -1046,6 +1051,7 @@
         }
         participant = snap.data();
         document.getElementById('header-points').textContent = participant.points || 0;
+        document.getElementById('header-rank-score').textContent = rankScore(participant);
         document.getElementById('header-name').textContent = nickname;
         document.getElementById('header-progress-text').textContent =
           `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
@@ -1104,6 +1110,7 @@
       if (!snap.exists) return;
       participant = snap.data();
       document.getElementById('header-points').textContent = participant.points || 0;
+      document.getElementById('header-rank-score').textContent = rankScore(participant);
       document.getElementById('header-name').textContent = nickname;
       document.getElementById('header-progress-text').textContent =
         `완료 ${(participant.completedLocations || []).length}/${locations.length}곳`;
