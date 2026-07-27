@@ -303,7 +303,7 @@
           checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'double') {
-          // 🎰 점수 2배
+          // 🎰 점수 2배 (보유 + 누적/순위 둘 다)
           const res = await db.runTransaction(async tx => {
             const pRef = db.collection('participants').doc(nickname);
             const qRef = db.collection('qrcodes').doc(code);
@@ -311,7 +311,8 @@
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             const pSnap = await tx.get(pRef);
             const cur = pSnap.data()?.points || 0;
-            tx.update(pRef, { points: cur * 2, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
+            const curEarned = pSnap.data()?.earnedPoints || 0;
+            tx.update(pRef, { points: cur * 2, earnedPoints: curEarned * 2, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             return { before: cur, after: cur * 2 };
           });
@@ -320,7 +321,7 @@
           checkAndAwardBadges(nickname, []).then(newBadges => showNewBadges(newBadges));
 
         } else if (qrData.type === 'half') {
-          // ✂️ 점수 절반
+          // ✂️ 점수 절반 (보유 + 누적/순위 둘 다)
           const res = await db.runTransaction(async tx => {
             const pRef = db.collection('participants').doc(nickname);
             const qRef = db.collection('qrcodes').doc(code);
@@ -328,8 +329,10 @@
             if ((qSnap.data()?.usedBy || []).includes(nickname)) throw new Error('ALREADY_USED');
             const pSnap = await tx.get(pRef);
             const cur = pSnap.data()?.points || 0;
+            const curEarned = pSnap.data()?.earnedPoints || 0;
             const newPts = Math.floor(cur / 2);
-            tx.update(pRef, { points: newPts, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
+            const newEarned = Math.floor(curEarned / 2);
+            tx.update(pRef, { points: newPts, earnedPoints: newEarned, scannedQRs: firebase.firestore.FieldValue.arrayUnion(code) });
             tx.update(qRef, { usedBy: firebase.firestore.FieldValue.arrayUnion(nickname) });
             return { before: cur, after: newPts };
           });
