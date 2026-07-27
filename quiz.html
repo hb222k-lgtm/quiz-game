@@ -558,31 +558,47 @@
       });
     }
 
-    // ── 타이머 ────────────────────────────────
+    // ── 타이머 (실제 시계 기준 — 앱 나가도 시간 계속 흐름, 꼼수 방지) ──
     const QUIZ_TIME = 30;
     let _timerInterval = null;
     let _timerOnTimeUp = null;
+    let _timerDeadline = 0;   // 마감 시각 (Date.now() 기준 ms)
 
     function startQuizTimer(onTimeUp, startSec = QUIZ_TIME) {
       _timerOnTimeUp = onTimeUp;
-      let sec = startSec;
+      _timerDeadline = Date.now() + startSec * 1000;
       const wrap = document.getElementById('quiz-timer-wrap');
       wrap.style.display = 'flex';
-      _updateTimerUI(sec);
+      _tickQuizTimer();
       clearInterval(_timerInterval);
-      _timerInterval = setInterval(() => {
-        sec--;
-        _updateTimerUI(sec);
-        if (sec <= 0) { clearInterval(_timerInterval); if (_timerOnTimeUp) _timerOnTimeUp(); }
-      }, 1000);
+      // 250ms마다 실제 시계로 남은 시간 재계산 → 백그라운드 후 복귀해도 정확
+      _timerInterval = setInterval(_tickQuizTimer, 250);
+    }
+
+    function _tickQuizTimer() {
+      const remainMs = _timerDeadline - Date.now();
+      const sec = Math.max(0, Math.ceil(remainMs / 1000));
+      _updateTimerUI(sec);
+      if (remainMs <= 0) {
+        clearInterval(_timerInterval);
+        const cb = _timerOnTimeUp;
+        _timerOnTimeUp = null;
+        if (cb) cb();
+      }
     }
 
     function stopQuizTimer() {
       clearInterval(_timerInterval);
       _timerOnTimeUp = null;
+      _timerDeadline = 0;
       const wrap = document.getElementById('quiz-timer-wrap');
       if (wrap) wrap.style.display = 'none';
     }
+
+    // 앱을 나갔다 돌아오면 즉시 남은 시간 재확인 (백그라운드 중 초과됐으면 바로 시간 초과 처리)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && _timerOnTimeUp && _timerDeadline) _tickQuizTimer();
+    });
 
     function _updateTimerUI(sec) {
       const pct = Math.max(0, (sec / QUIZ_TIME) * 100);

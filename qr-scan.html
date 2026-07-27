@@ -446,28 +446,46 @@
       }
     }
 
-    // ── QR 타이머 ──────────────────────────
+    // ── QR 타이머 (실제 시계 기준 — 앱 나가도 시간 계속 흐름, 꼼수 방지) ──
     const QR_TIME = 30;
     let _qrTimerInterval = null;
+    let _qrTimerOnTimeUp = null;
+    let _qrDeadline = 0;
 
     function startQRTimer(onTimeUp) {
-      let sec = QR_TIME;
+      _qrTimerOnTimeUp = onTimeUp;
+      _qrDeadline = Date.now() + QR_TIME * 1000;
       const wrap = document.getElementById('qr-timer-wrap');
       wrap.style.display = 'flex';
-      _updateQRTimerUI(sec);
+      _tickQRTimer();
       clearInterval(_qrTimerInterval);
-      _qrTimerInterval = setInterval(() => {
-        sec--;
-        _updateQRTimerUI(sec);
-        if (sec <= 0) { clearInterval(_qrTimerInterval); onTimeUp(); }
-      }, 1000);
+      _qrTimerInterval = setInterval(_tickQRTimer, 250);
+    }
+
+    function _tickQRTimer() {
+      const remainMs = _qrDeadline - Date.now();
+      const sec = Math.max(0, Math.ceil(remainMs / 1000));
+      _updateQRTimerUI(sec);
+      if (remainMs <= 0) {
+        clearInterval(_qrTimerInterval);
+        const cb = _qrTimerOnTimeUp;
+        _qrTimerOnTimeUp = null;
+        if (cb) cb();
+      }
     }
 
     function stopQRTimer() {
       clearInterval(_qrTimerInterval);
+      _qrTimerOnTimeUp = null;
+      _qrDeadline = 0;
       const wrap = document.getElementById('qr-timer-wrap');
       if (wrap) wrap.style.display = 'none';
     }
+
+    // 앱을 나갔다 돌아오면 즉시 남은 시간 재확인 (백그라운드 중 초과 시 바로 시간 초과)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && _qrTimerOnTimeUp && _qrDeadline) _tickQRTimer();
+    });
 
     function _updateQRTimerUI(sec) {
       const pct = Math.max(0, (sec / QR_TIME) * 100);
