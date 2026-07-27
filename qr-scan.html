@@ -658,15 +658,33 @@
     let _payTeamCtx = null; // 팀 결제 컨텍스트 {teamId, teamName, count, per}
     let _paying = false;
 
+    // 결제 최종 금액 = 원가 × (1 - 할인율%)
+    function payFinalAmount(qr) {
+      const orig = qr.points || 0;
+      const disc = Math.min(100, Math.max(0, qr.discount || 0));
+      return Math.round(orig * (100 - disc) / 100);
+    }
+
     async function showPayConfirm(qrData) {
       _payQR = qrData;
       _payTeamCtx = null;
-      const amount = qrData.points || 0;
+      const orig = qrData.points || 0;
+      const discount = Math.min(100, Math.max(0, qrData.discount || 0));
+      const amount = payFinalAmount(qrData);
       let myPts = 0;
       try { myPts = (await db.collection('participants').doc(nickname).get()).data()?.points || 0; } catch(e) {}
 
-      document.getElementById('pay-team-line').style.display = 'none';
-      document.getElementById('pay-amount-label').textContent = '결제 금액';
+      // 할인 안내 줄 (pay-team-line 재사용)
+      const discLine = document.getElementById('pay-team-line');
+      if (discount > 0) {
+        discLine.style.display = 'block';
+        discLine.style.cssText = 'display:block; background:#fef3c7; border:1.5px solid #fbbf24; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:14px; font-weight:800; color:#92400e; line-height:1.6;';
+        discLine.innerHTML = `🏷️ ${discount}% 할인!<br><span style="font-weight:600;">원가 <s>${orig}점</s> → <b>${amount}점</b></span>`;
+      } else {
+        discLine.style.display = 'none';
+      }
+
+      document.getElementById('pay-amount-label').textContent = discount > 0 ? '할인가' : '결제 금액';
       document.getElementById('pay-after-label').textContent  = '결제 후 잔액';
       document.getElementById('pay-emoji').textContent  = qrData.emoji || '💳';
       document.getElementById('pay-label').textContent  = qrData.label || '포인트 결제';
@@ -749,7 +767,8 @@
       if (_payTeamCtx) { await confirmTeamPay(); return; }
       _paying = true;
       const qr = _payQR;
-      const amount = qr.points || 0;
+      const amount = payFinalAmount(qr);       // 할인 적용된 최종 금액
+      const discount = Math.min(100, Math.max(0, qr.discount || 0));
       const btn = document.getElementById('pay-confirm-btn');
       btn.disabled = true; btn.textContent = '결제 중...';
 
@@ -769,7 +788,7 @@
           // 결제 기록 (트랜잭션 내 생성 → 차감과 원자적)
           tx.set(db.collection('payments').doc(), {
             nickname, qrId: qr.id, label: qr.label || '결제',
-            amount, paidAt: new Date().toISOString(),
+            amount, discount, origPrice: qr.points || 0, paidAt: new Date().toISOString(),
           });
         });
         document.getElementById('pay-confirm-wrap').style.display = 'none';

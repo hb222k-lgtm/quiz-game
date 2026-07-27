@@ -323,6 +323,32 @@
           </div>
         </div>
       </div>
+
+      <!-- 🏷️ 전체 판매 QR 일괄 할인 -->
+      <div class="card" style="margin-bottom:12px;">
+        <h3 style="font-weight:700; margin-bottom:4px;">🏷️ 전체 판매 QR 일괄 할인</h3>
+        <p style="font-size:13px; color:#94a3b8; margin-bottom:10px; line-height:1.6;">
+          모든 💳 결제 QR에 할인율을 <b>한 번에</b> 적용해요. (타임세일·행사 이벤트용)<br>
+          <span id="pay-discount-count" style="color:#7c3aed; font-weight:700;"></span>
+        </p>
+        <div style="display:flex; gap:8px;">
+          <select id="pay-bulk-discount" style="flex:1; min-width:0; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; font-weight:700; outline:none;">
+            <option value="0">할인 없음 (0%)</option>
+            <option value="10">10% 할인</option>
+            <option value="20">20% 할인</option>
+            <option value="30">30% 할인</option>
+            <option value="40">40% 할인</option>
+            <option value="50">50% 할인 (절반가)</option>
+            <option value="60">60% 할인</option>
+            <option value="70">70% 할인</option>
+            <option value="80">80% 할인</option>
+            <option value="90">90% 할인</option>
+            <option value="100">100% 할인 (무료)</option>
+          </select>
+          <button class="btn btn-primary" style="width:auto; white-space:nowrap;" onclick="applyBulkDiscount()">전체 적용</button>
+        </div>
+      </div>
+
       <div id="payments-list">
         <p class="text-muted text-center" style="padding:24px; font-size:13px;">아직 결제 내역이 없어요</p>
       </div>
@@ -879,6 +905,22 @@
         <input type="checkbox" id="qr-pay-once" style="width:18px; height:18px; accent-color:#7c3aed;">
         1인 1회만 결제 가능 <span style="color:#94a3b8; font-weight:400;">(체크 안 하면 반복 결제 가능)</span>
       </label>
+      <div class="form-group">
+        <label>🏷️ 할인율 <span style="color:#94a3b8; font-weight:400;">(선택 · 학생이 낼 금액이 그만큼 깎여요)</span></label>
+        <select id="qr-pay-discount" style="width:100%; padding:10px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; font-weight:700; outline:none;">
+          <option value="0">할인 없음</option>
+          <option value="10">10% 할인</option>
+          <option value="20">20% 할인</option>
+          <option value="30">30% 할인</option>
+          <option value="40">40% 할인</option>
+          <option value="50">50% 할인 (절반가)</option>
+          <option value="60">60% 할인</option>
+          <option value="70">70% 할인</option>
+          <option value="80">80% 할인</option>
+          <option value="90">90% 할인</option>
+          <option value="100">100% 할인 (무료)</option>
+        </select>
+      </div>
     </div>
 
     <!-- 🧑‍🤝‍🧑 팀 결제 섹션 -->
@@ -2611,6 +2653,7 @@ function openQRModal() {
   document.getElementById('qr-team-required').value = '3';
   document.getElementById('qr-team-bonus').value = '200';
   document.getElementById('qr-pay-once').checked = false;
+  document.getElementById('qr-pay-discount').value = '0';
   document.getElementById('qr-hint').value = '';
   document.getElementById('qr-start-at').value = '';
   document.getElementById('qr-end-at').value = '';
@@ -2639,7 +2682,8 @@ async function generateQR() {
   } else if (type === 'pay') {
     const points = parseInt(document.getElementById('qr-points').value) || 100;
     const oncePer = document.getElementById('qr-pay-once').checked;
-    data = { label, type: 'pay', points, oncePer, enabled: true, usedBy: [] };
+    const discount = parseInt(document.getElementById('qr-pay-discount').value) || 0;
+    data = { label, type: 'pay', points, oncePer, discount, enabled: true, usedBy: [] };
   } else if (type === 'team_pay') {
     const points = parseInt(document.getElementById('qr-points').value) || 500;
     data = { label, type: 'team_pay', points, enabled: true, usedBy: [], paidTeams: [] };
@@ -2696,6 +2740,7 @@ function showQRImage(id) {
   } else if (qr.type === 'pay') {
     document.getElementById('qr-points').value = qr.points || 100;
     document.getElementById('qr-pay-once').checked = !!qr.oncePer;
+    document.getElementById('qr-pay-discount').value = String(qr.discount || 0);
   } else if (qr.type === 'team_pay') {
     document.getElementById('qr-points').value = qr.points || 500;
   }
@@ -2894,6 +2939,25 @@ function listenPayments() {
   }, e => console.warn('결제 내역 수신 오류:', e));
 }
 
+// 🏷️ 전체 판매(💳 결제) QR에 할인율 일괄 적용
+async function applyBulkDiscount() {
+  const disc = parseInt(document.getElementById('pay-bulk-discount').value) || 0;
+  const paySnap = await db.collection('qrcodes').where('type', '==', 'pay').get();
+  if (paySnap.empty) { showToast('결제 QR이 없어요. 먼저 만들어주세요.'); return; }
+  const label = disc === 0 ? '할인 없음' : `${disc}% 할인`;
+  if (!confirm(`결제 QR ${paySnap.size}개 전체에 "${label}"을(를) 적용할까요?`)) return;
+  const chunk = 400;
+  const docs = paySnap.docs;
+  for (let i = 0; i < docs.length; i += chunk) {
+    const batch = db.batch();
+    docs.slice(i, i + chunk).forEach(d => batch.update(d.ref, { discount: disc }));
+    await batch.commit();
+  }
+  showToast(`🏷️ 결제 QR ${paySnap.size}개에 ${label} 적용 완료!`);
+  const cntEl = document.getElementById('pay-discount-count');
+  if (cntEl) cntEl.textContent = `현재 결제 QR ${paySnap.size}개`;
+}
+
 function renderPayments() {
   const el = document.getElementById('payments-list');
   if (!el) return;
@@ -2915,7 +2979,7 @@ function renderPayments() {
       <div style="font-size:24px; margin-right:10px; flex-shrink:0;">${p.teamOrder ? '🧑‍🤝‍🧑' : '💳'}</div>
       <div class="rank-info" style="flex:1; min-width:0;">
         <div class="rank-name">${escHtml(p.nickname)}${teamBadge}</div>
-        <div class="rank-detail">${escHtml(p.label || '결제')}</div>
+        <div class="rank-detail">${escHtml(p.label || '결제')}${p.discount ? ` <span style="color:#d97706;font-weight:700;">🏷️${p.discount}%할인(원가 ${p.origPrice||0})</span>` : ''}</div>
         <div style="font-size:11px; color:#94a3b8;">${p.paidAt ? new Date(p.paidAt).toLocaleString('ko-KR') : ''}</div>
       </div>
       <div style="font-weight:900; color:${p.teamOrder ? '#0369a1' : '#0f766e'}; flex-shrink:0;">-${p.amount || 0}점</div>
